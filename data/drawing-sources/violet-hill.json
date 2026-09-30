@@ -1,0 +1,69 @@
+{
+  "name": "Violet Hill drawing register",
+  "description": "Violet Hill (0118): the Phase 1 trial 03-Year Plan. Its Drawing list sheets are the register and its Design Fee sheet is the base DFS.",
+  "sourceDir": "violet-hill",
+  "planSheetPattern": "drawing list",
+  "planWorkbooks": [
+    {
+      "file": "0118_Violet Hill_ 03YPlan_01012026 - Ph 1 trail.xlsx",
+      "projectCode": "VIOLET-HILL",
+      "role": "CURRENT",
+      "label": "Violet Hill 03YPlan 01-Jan-2026 (Phase 1 trial)",
+      "snapshotDate": "2026-01-01",
+      "planYear": 2026
+    }
+  ],
+  "designFees": [
+    {
+      "file": "0118_Violet Hill_ 03YPlan_01012026 - Ph 1 trail.xlsx",
+      "projectCode": "VIOLET-HILL",
+      "sheet": "Design Fee",
+      "label": "Violet Hill Design Fee (CY 26)"
+    }
+  ],
+  "projects": [
+    {
+      "code": "VIOLET-HILL",
+      "name": "Violet Hill"
+    }
+  ],
+  "dfsHierarchy": {
+    "labelPrefix": "^GFC\\s*\\|\\s*",
+    "nodeTypes": [],
+    "resolveUnlinkedByHeading": true
+  },
+  "phaseMap": {},
+  "expected": {
+    "projects": {
+      "VIOLET-HILL": {
+        "drawings": 88,
+        "released": 88,
+        "notReleased": 0,
+        "notYetNumbered": 0,
+        "numberConflicts": 0,
+        "actualDates": 88
+      }
+    },
+    "total": {
+      "drawings": 88,
+      "released": 88,
+      "notReleased": 0,
+      "notYetNumbered": 0,
+      "numberConflicts": 0,
+      "actualDates": 88
+    },
+    "historicalSnapshotRows": {
+      "total": 0
+    },
+    "packages": {
+      "VIOLET-HILL": 24
+    },
+    "packageLinkedDrawings": {
+      "VIOLET-HILL": 88
+    },
+    "wbsNodes": {
+      "VIOLET-HILL": 3
+    }
+  },
+  "packageLinking": "The Design Fee sheet is the base DFS: its headings (Design Concept, Master Plan, Clubhouse + Amenities) are the WBS groups and each coded row is a package (MP 01 … MP 12, AM 01 … AM 05, DC 01 … DC 06); the coded fee line \"MA — Master Archives\" has no rows beneath it and is a package directly under the project. Drawing batches UD-MP-n / AR-MP-n link to package MP n by batch code."
+}

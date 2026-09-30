@@ -1,0 +1,588 @@
+{
+  "name": "PoaRR drawing register",
+  "description": "Pursuit of a Radical Rhapsody (0059): Residential, Tower 08 and Tower 09 drawing registers. Inspected in DRAWINGS-STAGE1-INSPECTION.md; decisions approved for Stage 2.",
+  "sourceDir": "poarr",
+  "planSheetPattern": "drawing list",
+  "planWorkbooks": [
+    {
+      "file": "0059_PoaRR_Residential_03YPlan_01012026.xlsm",
+      "projectCode": "POARR-RES",
+      "role": "CURRENT",
+      "label": "Residential 03YPlan 01-Jan-2026",
+      "snapshotDate": "2026-01-01",
+      "planYear": 2026
+    },
+    {
+      "file": "0059_PoaRR_Residential_03YPlan_01012025.xlsm",
+      "projectCode": "POARR-RES",
+      "role": "HISTORICAL",
+      "label": "Residential 03YPlan 01-Jan-2025",
+      "snapshotDate": "2025-01-01",
+      "planYear": 2025
+    },
+    {
+      "file": "0059_PoaRR_Residential_03YPlan_01012024.xlsm",
+      "projectCode": "POARR-RES",
+      "role": "HISTORICAL",
+      "label": "Residential 03YPlan 01-Jan-2024",
+      "snapshotDate": "2024-01-01",
+      "planYear": 2024
+    },
+    {
+      "file": "0059_PoaRR_Tower08_03YPlan_01012026.xlsm",
+      "projectCode": "POARR-T08",
+      "role": "CURRENT",
+      "label": "Tower08 03YPlan 01-Jan-2026",
+      "snapshotDate": "2026-01-01",
+      "planYear": 2026
+    },
+    {
+      "file": "0059_PoaRR_Tower08_03YPlan_01012025.xlsm",
+      "projectCode": "POARR-T08",
+      "role": "HISTORICAL",
+      "label": "Tower08 03YPlan 01-Jan-2025",
+      "snapshotDate": "2025-01-01",
+      "planYear": 2025
+    },
+    {
+      "file": "0059_PoaRR_Tower08_03YPlan_01012024.xlsx",
+      "projectCode": "POARR-T08",
+      "role": "HISTORICAL",
+      "label": "Tower08 03YPlan 01-Jan-2024",
+      "snapshotDate": "2024-01-01",
+      "planYear": 2024
+    },
+    {
+      "file": "0059_PoaRR_Commercial_03YPlan.xlsx",
+      "projectCode": "POARR-T09",
+      "role": "HISTORICAL",
+      "label": "Commercial 03YPlan (2023 plan)",
+      "snapshotDate": null,
+      "planYear": 2023,
+      "usage": "T09 plan history and baseline only; not the current T09 register"
+    }
+  ],
+  "register": {
+    "file": "PoaRR T09 Drawing Register 2026.xlsm",
+    "projectCode": "POARR-T09",
+    "label": "T09 Drawing Register 2026",
+    "sheets": [
+      {
+        "name": "Architecture",
+        "discipline": "AR",
+        "firstDataRow": 6,
+        "columns": {
+          "number": "B",
+          "title": "C",
+          "location": "E",
+          "batchCode": "F",
+          "batch": "G",
+          "revision": "I"
+        }
+      },
+      {
+        "name": "Structure",
+        "discipline": "ST",
+        "firstDataRow": 6,
+        "columns": {
+          "number": "A",
+          "title": "B",
+          "location": "D",
+          "batchCode": "E",
+          "batch": "F",
+          "revision": "H"
+        }
+      },
+      {
+        "name": "MEP",
+        "discipline": "MEP",
+        "firstDataRow": 6,
+        "columns": {
+          "number": "A",
+          "title": "B",
+          "location": "D",
+          "batchCode": "E",
+          "batch": "F",
+          "revision": "H"
+        }
+      },
+      {
+        "name": "Landscape",
+        "discipline": "LS",
+        "firstDataRow": 6,
+        "columns": {
+          "number": "A",
+          "title": "B",
+          "location": "D",
+          "batchCode": "E",
+          "batch": "F",
+          "revision": "H"
+        }
+      }
+    ],
+    "acc": {
+      "sheet": "T09 Summary",
+      "label": "T09 Summary (ACC export)",
+      "headerRow": 1,
+      "columns": {
+        "number": "A",
+        "title": "B",
+        "collection": "C",
+        "versions": "D",
+        "releaseDate": "E",
+        "createdAt": "F",
+        "discipline": "G",
+        "tags": "H"
+      }
+    }
+  },
+  "designFees": [
+    {
+      "file": "0059_PoaRR_Residential_03YPlan_01012026.xlsm",
+      "projectCode": "POARR-RES",
+      "sheet": "Design Fee",
+      "label": "Residential Design Fee (CY 26)"
+    },
+    {
+      "file": "0059_PoaRR_Tower08_03YPlan_01012026.xlsm",
+      "projectCode": "POARR-T08",
+      "sheet": "Design Fee",
+      "label": "Tower08 Design Fee (CY 26)"
+    },
+    {
+      "file": "0059_PoaRR_Commercial_03YPlan.xlsx",
+      "projectCode": "POARR-T09",
+      "sheet": "Design Fee",
+      "label": "Commercial 03YPlan (2023 plan) — Design Fee: the only package definition for Tower 09"
+    }
+  ],
+  "projects": [
+    {
+      "code": "PORR",
+      "name": "Pursuit of a Radical Rhapsody"
+    },
+    {
+      "code": "POARR-RES",
+      "name": "Residential",
+      "parent": "PORR",
+      "order": 1
+    },
+    {
+      "code": "POARR-T08",
+      "name": "Tower 08",
+      "parent": "PORR",
+      "order": 2
+    },
+    {
+      "code": "POARR-T09",
+      "name": "Tower 09",
+      "parent": "PORR",
+      "order": 3
+    }
+  ],
+  "packageLinking": "The base DFS is each project's Design Fee sheet: its headings (\"GFC | Tower—01\", \"GFC | Individual Homes\", \"GFC | Independent Subgrade Structure—Block 04\" …) are the WBS tree above packages, nested by the sheet's outline numbers, and every coded row is a package under the heading it sits beneath. The stage prefix \"GFC | \" is dropped from node names (the source label is kept). A drawing's package: (1) its batch code is the package code with an optional discipline prefix and an unpadded number (AR-T01-1 → T01-01, ST-TXV-12 → TXV-12, BB01-2 → BB01-2); (2) only when the batch names no DFS package, the drawing-list heading it sits under, if that heading names exactly one package by code or location token (\"Individual Home V40\" → V40-01), logged as BATCH_RESOLVED_BY_DFS_HEADING. A batch marked \"-NA\", a heading naming several packages, or no match leaves the drawing unmapped (BATCH_WITHOUT_FEE_PACKAGE / DRAWING_PACKAGE_AMBIGUOUS) — nothing is guessed. Tower 09 has no current Design Fee sheet; the Commercial 03-Year Plan (2023) Design Fee sheet is its only package definition and is used as its base DFS. Tower 09 register batches <discipline>-ISS-n and <discipline>-MP-n carry no heading; the location (ISS, MP) is the initials of exactly one Design Fee group (Independent Subgrade Structure, Master Plan) and n is the package's position in that group — logged as BATCH_RESOLVED_BY_GROUP_ORDINAL.",
+  "dfsHierarchy": {
+    "labelPrefix": "^GFC\\s*\\|\\s*",
+    "nodeTypes": [],
+    "resolveUnlinkedByHeading": true
+  },
+  "excluded": [
+    {
+      "file": "Design Deliverables PoaRR.xlsx",
+      "reason": "Design work items (no drawing numbers). Not imported as drawings or as drawing dependencies; dependencies are added manually in Drawing Control."
+    }
+  ],
+  "phaseMap": {
+    "POARR-RES": [
+      {
+        "location": "T01",
+        "phase": "T1",
+        "rule": "EXACT",
+        "note": "Tower—01 (Pkgs Summary: GFC | Tower—01)"
+      },
+      {
+        "location": "T07",
+        "phase": "T7",
+        "rule": "EXACT",
+        "note": "Tower—07 (Pkgs Summary: GFC | Tower—07)"
+      },
+      {
+        "location": "T2V",
+        "phase": "T2",
+        "rule": "EXACT",
+        "note": "Tower—2V. The V (vertical) block is the tower phase; stepped blocks have their own phases (T4_Stepped, T5_Stepped)"
+      },
+      {
+        "location": "T6V",
+        "phase": "T6",
+        "rule": "EXACT",
+        "note": "Tower—6V"
+      },
+      {
+        "location": "V40",
+        "phase": "V40",
+        "rule": "EXACT",
+        "note": "Individual Home V40 — project phase V40"
+      },
+      {
+        "location": "TXV",
+        "zone": "T3V",
+        "phase": "T3",
+        "rule": "ZONE",
+        "note": "Tower—3V-5V split by the tower token in the drawing number (S-T3V-…)"
+      },
+      {
+        "location": "TXV",
+        "zone": "T4V",
+        "phase": "T4",
+        "rule": "ZONE",
+        "note": "Tower—3V-5V split by drawing-number token T4V"
+      },
+      {
+        "location": "TXV",
+        "zone": "T5V",
+        "phase": "T5",
+        "rule": "ZONE",
+        "note": "Tower—3V-5V split by drawing-number token T5V"
+      },
+      {
+        "location": "TXV",
+        "zone": "T6V",
+        "phase": "T6",
+        "rule": "ZONE",
+        "note": "Drawing-number token T6V"
+      },
+      {
+        "location": "TXV",
+        "phase": null,
+        "rule": "MULTI_PHASE",
+        "note": "Shared Tower 3V-5V drawing (token TXV) covers three phases — not assigned to one"
+      },
+      {
+        "location": "TXS",
+        "zone": "T4S",
+        "phase": "T4_Stepped",
+        "rule": "ZONE",
+        "note": "Tower—3S-5S split by drawing-number token T4S"
+      },
+      {
+        "location": "TXS",
+        "zone": "T5S",
+        "phase": "T5_Stepped",
+        "rule": "ZONE",
+        "note": "Tower—3S-5S split by drawing-number token T5S"
+      },
+      {
+        "location": "TXS",
+        "phase": null,
+        "rule": "MULTI_PHASE",
+        "note": "Shared Tower 3S-5S drawing, or T3S (the project has no T3 stepped phase)"
+      },
+      {
+        "location": "T2S",
+        "phase": null,
+        "rule": "NO_MATCHING_PHASE",
+        "note": "Tower—2S (stepped). The project has no T2 stepped phase"
+      },
+      {
+        "location": "T6S",
+        "phase": null,
+        "rule": "NO_MATCHING_PHASE",
+        "note": "Tower—6S (stepped). The project has no T6 stepped phase"
+      },
+      {
+        "location": "T2V-6V",
+        "phase": null,
+        "rule": "MULTI_PHASE",
+        "note": "MEP drawing spanning Towers 2V-6V"
+      },
+      {
+        "location": "T2S-6S",
+        "phase": null,
+        "rule": "MULTI_PHASE",
+        "note": "MEP drawing spanning Towers 2S-6S"
+      },
+      {
+        "location": "T01-07",
+        "phase": null,
+        "rule": "MULTI_PHASE",
+        "note": "MEP drawing spanning Towers 1-7"
+      },
+      {
+        "location": "SDV",
+        "phase": "Res",
+        "rule": "GOALS_PHASE",
+        "note": "Master plan / site development / site MEP. Design Goals place Site Development, Site MEP and Masterplan in phase Res"
+      },
+      {
+        "location": "AMN",
+        "phase": "Res",
+        "rule": "GOALS_PHASE",
+        "note": "Amenities & Facilities. Design Goals place Amenities, Clubhouse and Sporting Facilities in phase Res"
+      },
+      {
+        "location": "VC3",
+        "phase": "Res",
+        "rule": "GOALS_PHASE",
+        "note": "Villas Cluster 3. Design Goals place Villa Cluster 3 in phase Res"
+      },
+      {
+        "location": "V03",
+        "phase": "Res",
+        "rule": "GOALS_PHASE",
+        "note": "VC-3 landscape. Villa Cluster 3 is phase Res"
+      },
+      {
+        "location": "VC1",
+        "phase": "Res",
+        "rule": "GOALS_PHASE",
+        "note": "Villas Cluster 1 & 2 — the villa clusters are phase Res (Pkgs Summary: GFC | Villas)"
+      },
+      {
+        "location": "V01",
+        "phase": "Res",
+        "rule": "GOALS_PHASE",
+        "note": "VC-1 & 2 landscape — villa clusters are phase Res"
+      },
+      {
+        "location": "SS0",
+        "phase": "Res",
+        "rule": "GOALS_PHASE",
+        "note": "Independent Subgrade Structure. Design Goals place ISS in phase Res"
+      },
+      {
+        "location": "SS1",
+        "phase": "Res",
+        "rule": "GOALS_PHASE",
+        "note": "ISS Block 01"
+      },
+      {
+        "location": "SS2",
+        "phase": "Res",
+        "rule": "GOALS_PHASE",
+        "note": "ISS Block 02"
+      },
+      {
+        "location": "SS3",
+        "phase": "Res",
+        "rule": "GOALS_PHASE",
+        "note": "ISS Block 03"
+      },
+      {
+        "location": "SS4",
+        "phase": "Res",
+        "rule": "GOALS_PHASE",
+        "note": "ISS Block 04"
+      },
+      {
+        "location": "SS5",
+        "phase": "Res",
+        "rule": "GOALS_PHASE",
+        "note": "ISS Block 05"
+      },
+      {
+        "location": "SS6",
+        "phase": "Res",
+        "rule": "GOALS_PHASE",
+        "note": "ISS Block 06"
+      },
+      {
+        "location": "SS7",
+        "phase": "Res",
+        "rule": "GOALS_PHASE",
+        "note": "ISS Block 07"
+      },
+      {
+        "location": "SS8",
+        "phase": "Res",
+        "rule": "GOALS_PHASE",
+        "note": "ISS Block 08"
+      },
+      {
+        "location": "SS9",
+        "phase": "Res",
+        "rule": "GOALS_PHASE",
+        "note": "ISS Block 09"
+      },
+      {
+        "location": "S10",
+        "phase": "Res",
+        "rule": "GOALS_PHASE",
+        "note": "ISS Block 10"
+      },
+      {
+        "location": "S11",
+        "phase": "Res",
+        "rule": "GOALS_PHASE",
+        "note": "ISS Block 11"
+      },
+      {
+        "location": "S12",
+        "phase": "Res",
+        "rule": "GOALS_PHASE",
+        "note": "ISS Block 12 [6V ext. basement]"
+      },
+      {
+        "location": "R11",
+        "phase": "Res",
+        "rule": "GOALS_PHASE",
+        "note": "Individual Home R11 (Pkgs Summary: GFC | Individual Homes). Design Goals place individual-home work (V40 Default and variants) in phase Res"
+      },
+      {
+        "location": "R22",
+        "phase": "Res",
+        "rule": "GOALS_PHASE",
+        "note": "Individual Home R22 — individual homes are phase Res"
+      },
+      {
+        "location": "L30",
+        "phase": "Res",
+        "rule": "GOALS_PHASE",
+        "note": "Individual Home L30 — individual homes are phase Res"
+      },
+      {
+        "location": "L30P",
+        "phase": "Res",
+        "rule": "GOALS_PHASE",
+        "note": "Individual Home L30P — individual homes are phase Res"
+      },
+      {
+        "location": "L45",
+        "phase": "Res",
+        "rule": "GOALS_PHASE",
+        "note": "Individual Home L45 — individual homes are phase Res"
+      },
+      {
+        "location": "L45P",
+        "phase": "Res",
+        "rule": "GOALS_PHASE",
+        "note": "Individual Home L45P — individual homes are phase Res"
+      },
+      {
+        "location": "C20",
+        "phase": "Res",
+        "rule": "GOALS_PHASE",
+        "note": "Individual Home C20 — individual homes are phase Res"
+      },
+      {
+        "location": "C20P",
+        "phase": "Res",
+        "rule": "GOALS_PHASE",
+        "note": "Individual Home C20P — individual homes are phase Res"
+      },
+      {
+        "location": "V50",
+        "phase": "Res",
+        "rule": "GOALS_PHASE",
+        "note": "Individual Home V50 — individual homes are phase Res"
+      },
+      {
+        "location": "V41",
+        "phase": "V40",
+        "rule": "VARIANT",
+        "note": "V40 variant (drawing number ELE-V40-…)"
+      },
+      {
+        "location": "V42",
+        "phase": "V40",
+        "rule": "VARIANT",
+        "note": "V40 variant (drawing number ELE-V40-…)"
+      },
+      {
+        "location": "V43",
+        "phase": "V40",
+        "rule": "VARIANT",
+        "note": "V40 variant (drawing number ELE-V40-…)"
+      },
+      {
+        "location": "V44",
+        "phase": "V40",
+        "rule": "VARIANT",
+        "note": "V40 variant (drawing number ELE-V40-…)"
+      },
+      {
+        "location": "V45",
+        "phase": "V40",
+        "rule": "VARIANT",
+        "note": "V40 variant (drawing number ELE-V40-…)"
+      }
+    ],
+    "POARR-T08": [
+      {
+        "location": "*",
+        "phase": "T08",
+        "rule": "PROJECT_SINGLE_PHASE",
+        "note": "Tower 08 has one phase, T08"
+      }
+    ],
+    "POARR-T09": [
+      {
+        "location": "*",
+        "phase": null,
+        "rule": "NO_PHASE_DEFINED",
+        "note": "POARR-T09 has no phases and the register does not establish one"
+      }
+    ]
+  },
+  "expected": {
+    "projects": {
+      "POARR-RES": {
+        "drawings": 11403,
+        "released": 11235,
+        "notReleased": 168,
+        "notYetNumbered": 813,
+        "numberConflicts": 41,
+        "actualDates": 0
+      },
+      "POARR-T08": {
+        "drawings": 1524,
+        "released": 1149,
+        "notReleased": 375,
+        "notYetNumbered": 549,
+        "numberConflicts": 66,
+        "actualDates": 0
+      },
+      "POARR-T09": {
+        "drawings": 1499,
+        "released": 1404,
+        "notReleased": 95,
+        "notYetNumbered": 0,
+        "numberConflicts": 5,
+        "accOnlyConflicts": 5,
+        "actualDates": 1404
+      }
+    },
+    "total": {
+      "drawings": 14426,
+      "released": 13788,
+      "notReleased": 638,
+      "notYetNumbered": 1362,
+      "numberConflicts": 112,
+      "accOnlyConflicts": 5,
+      "actualDates": 1404
+    },
+    "historicalSnapshotRows": {
+      "0059_PoaRR_Residential_03YPlan_01012024.xlsm": 3284,
+      "0059_PoaRR_Residential_03YPlan_01012025.xlsm": 11699,
+      "0059_PoaRR_Tower08_03YPlan_01012024.xlsx": 1528,
+      "0059_PoaRR_Tower08_03YPlan_01012025.xlsm": 1434,
+      "0059_PoaRR_Commercial_03YPlan.xlsx": 572,
+      "total": 18517
+    },
+    "packages": {
+      "POARR-RES": 116,
+      "POARR-T08": 32,
+      "POARR-T09": 27
+    },
+    "packageLinkedDrawings": {
+      "POARR-RES": 10953,
+      "POARR-T08": 1522,
+      "POARR-T09": 1499
+    },
+    "wbsNodes": {
+      "POARR-RES": 19,
+      "POARR-T08": 5,
+      "POARR-T09": 6
+    }
+  }
+}

@@ -1,0 +1,108 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-surface-alt text-ink text-[13px] antialiased;
+  font-feature-settings: 'tnum' 1, 'cv05' 1;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+@layer components {
+  .card {
+    @apply rounded-md border border-line bg-surface shadow-card;
+  }
+  .card-pad {
+    @apply p-4;
+  }
+  .card-head {
+    @apply flex items-baseline justify-between gap-3 border-b border-line px-4 py-2.5;
+  }
+  .card-title {
+    @apply text-[12px] font-semibold uppercase tracking-wide text-ink-mute;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded border border-line bg-surface px-2.5 py-1.5
+           text-[12px] font-medium text-ink-soft transition
+           hover:bg-surface-sunk hover:text-ink focus:outline-none focus:ring-2 focus:ring-brand-300
+           disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply border-brand-600 bg-brand-600 text-white hover:bg-brand-700 hover:text-white;
+  }
+  .btn-danger {
+    @apply border-rag-red bg-rag-red text-white hover:bg-red-800 hover:text-white;
+  }
+  .btn-sm {
+    @apply px-2 py-1 text-2xs;
+  }
+
+  .input,
+  .select {
+    @apply w-full rounded border border-line bg-surface px-2 py-1.5 text-[12px] text-ink
+           focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-300;
+  }
+  .label {
+    @apply mb-1 block text-2xs font-semibold uppercase tracking-wide text-ink-mute;
+  }
+
+  .table {
+    @apply w-full border-collapse text-[12px];
+  }
+  .table thead th {
+    @apply sticky top-0 z-10 whitespace-nowrap border-b border-line bg-surface-sunk px-2.5 py-2
+           text-left text-2xs font-semibold uppercase tracking-wide text-ink-mute;
+  }
+  .table tbody td {
+    @apply border-b border-line/70 px-2.5 py-1.5 align-top;
+  }
+  .table tbody tr:hover {
+    @apply bg-brand-50/60;
+  }
+  .num {
+    @apply text-right font-mono tabular-nums;
+  }
+  .table-compact thead th {
+    @apply static py-1.5 normal-case tracking-normal;
+  }
+  .table-compact tbody td {
+    @apply py-1;
+  }
+
+  .pill {
+    @apply inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-2xs font-semibold;
+  }
+  .link {
+    @apply text-brand-600 underline-offset-2 hover:underline;
+  }
+  .kpi-value {
+    @apply font-mono text-[22px] font-semibold leading-none tabular-nums text-ink;
+  }
+  .kpi-label {
+    @apply text-2xs font-semibold uppercase tracking-wide text-ink-mute;
+  }
+  .nav-item {
+    @apply flex items-center gap-2 rounded px-2.5 py-1.5 text-[12.5px] font-medium text-slate-300
+           hover:bg-white/10 hover:text-white;
+  }
+  .nav-item-active {
+    @apply bg-white/15 text-white;
+  }
+  .sub {
+    @apply text-2xs text-ink-mute;
+  }
+}

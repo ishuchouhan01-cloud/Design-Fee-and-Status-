@@ -1,0 +1,28 @@
+node_modules/
+.next/
+.next-prod/
+.next-prod-previous/
+.versions/
+_to_delete/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# Local data — never commit a dump, an import log or the working database
+data/*.db
+data/*.db-*
+data/test-*
+backups/
+import-reports/
+
+# Local configuration
+.env
+.env.local
+
+# Source workbooks (keep them out of version control; put them in ./import locally)
+import/*.xlsx
+import/*.xlsm
+!import/.gitkeep
+
+.DS_Store
+Thumbs.db
