@@ -98,7 +98,7 @@ sticky header and Name column:
 - **Rows with no drawings** are not shown and count nowhere; Edit Mode → *Show empty rows* shows them greyed.
 - **No billing without a released drawing**: such a fee line shows “—” and is left out of every total (src/lib/services/billing-rollup.ts). Billed lines left out are listed under *Billing to review* on the Billing view.
 - **Expand to**: Projects · Phases · Towers / Products · Packages · Disciplines · Drawings (kept per user).
-- **Commands**:  (dry-run diagnostic),  (Import Centre from the command line),  (Excel ⇄ database ⇄ screen). Details: PDS-IMPORT-FIX-REPORT.md.
+- **Commands**: `npm run import:diagnose -- <folder>` (dry-run diagnostic), `npm run import:centre -- <list.json> [--apply]` (Import Centre from the command line), `npm run import:reconcile -- <list.json>` (Excel ⇄ database ⇄ screen). Details: PDS-IMPORT-FIX-REPORT.md.
 
 ## 0. Starting the application (everyday use)
 
