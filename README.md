@@ -92,6 +92,14 @@ sticky header and Name column:
   row (hidden everywhere, never deleted). Every change is audited and marked
   as edited, so a later import keeps it.
 
+### Design Fee layouts, empty rows, billing rule, Expand to (05-Oct-2026)
+
+- **Two Design Fee layouts** (src/lib/import/drawing-register/design-fee.ts): per discipline (AR · ST · MEP · LS blocks) and **one fee per package** (Total Fee | Released Till Date | Balance | Billed till Dec'yy). Package rows may carry a department prefix (AR-BB26-2 is package BB26-2); drawing batches link on the code without their prefix (ST-BB26-2 → BB26-2). The one-fee-per-package fee is stored on the package (packages.fee_value, billed_to_date_value, released_to_date_value, balance_value; migration 0010) and never split. Layout AUTO uses it whenever the column set exists; PoRR and Violet Hill pin per discipline in their manifests; the Import Centre lets the user choose the sheet and the layout.
+- **Rows with no drawings** are not shown and count nowhere; Edit Mode → *Show empty rows* shows them greyed.
+- **No billing without a released drawing**: such a fee line shows “—” and is left out of every total (src/lib/services/billing-rollup.ts). Billed lines left out are listed under *Billing to review* on the Billing view.
+- **Expand to**: Projects · Phases · Towers / Products · Packages · Disciplines · Drawings (kept per user).
+- **Commands**:  (dry-run diagnostic),  (Import Centre from the command line),  (Excel ⇄ database ⇄ screen). Details: PDS-IMPORT-FIX-REPORT.md.
+
 ## 0. Starting the application (everyday use)
 
 Double-click:
