@@ -17,7 +17,7 @@ import { createHash } from 'node:crypto';
 import { calendarQuarter } from '@/lib/periods';
 import { SILENT_NULL_RULES, type DrawingManifest, type PhaseMapEntry, type PhaseRule } from './manifest';
 import type { AccRow, PlanRow, RegisterRow } from './parse';
-import { packageCodeForBatch, type DesignFeeParse } from './design-fee';
+import { PACKAGE_FEE_LINE, packageCodeForBatch, type DesignFeeParse } from './design-fee';
 
 export type Severity = 'INFO' | 'WARNING' | 'ERROR';
 
@@ -176,6 +176,11 @@ export interface PlannedPackage {
   responsible: string | null;
   ref: SourceRef;
   fees: PlannedPackageFee[];
+  /** The whole-package fee line (PACKAGE_TOTAL Design Fee layout): one fee per
+   *  package, never split over disciplines. Null for per-discipline sheets. */
+  packageFee?: { fee: number | null; billedToDate: number | null; releasedToDate: number | null; balance: number | null } | null;
+  /** The code as the fee sheet's row gives it (AR-BB26-2 for BB26-2). */
+  lineCode?: string | null;
 }
 
 /** A heading of the base-DFS tree above packages (see design-fee.ts). */
@@ -312,7 +317,7 @@ export interface ImportPlan {
     packages: Record<string, number>;
     wbsNodes: Record<string, number>;
     packageLinkedDrawings: Record<string, number>;
-    fees: Record<string, { sheetTotal: Record<string, number>; packageFees: Record<string, number>; duplicateFees: Record<string, number>; feesOutsidePackages: Record<string, number> }>;
+    fees: Record<string, { layout?: string; sheetTotal: Record<string, number>; packageFees: Record<string, number>; duplicateFees: Record<string, number>; feesOutsidePackages: Record<string, number>; sheetBilled?: Record<string, number>; packageBilled?: Record<string, number> }>;
   };
 }
 
@@ -517,6 +522,7 @@ export function buildPlan(
     warnings: string[];
     formulaIssues?: { workbook: string; sheet: string; row: number; col: number; formula: string; reason: string }[];
     designFees?: (DesignFeeParse & { projectCode: string; workbook: string })[];
+    feeIssues?: PlanIssue[];
   },
 ): ImportPlan {
   const issues: PlanIssue[] = sources.warnings.map((w) => ({
@@ -537,6 +543,7 @@ export function buildPlan(
       payload: { formula: f.formula, column: colName(f.col) },
     });
   }
+  issues.push(...(sources.feeIssues ?? []));
   const phases = new PhaseResolver(manifest);
   const drawings: PlannedDrawing[] = [];
   const conflicts: PlannedConflict[] = [];
@@ -1026,6 +1033,8 @@ export function buildPlan(
   for (const fee of sources.designFees ?? []) {
     issues.push(...fee.issues);
     feeTotals[fee.projectCode] = {
+      layout: fee.layout,
+      ...(fee.sheetBilled ? { sheetBilled: fee.sheetBilled, packageBilled: fee.packageBilled ?? {} } : {}),
       sheetTotal: fee.sheetTotal,
       packageFees: fee.packageFees,
       duplicateFees: fee.duplicateFees,
@@ -1148,7 +1157,12 @@ export function buildPlan(
         phaseCode: null,
         responsible: p.responsible ?? null,
         ref: { workbook: p.workbook, sheet: p.sheet, row: p.row },
-        fees: p.disciplines.map((d) => {
+        lineCode: p.lineCode ?? null,
+        packageFee: (() => {
+          const w = p.disciplines.find((d) => d.discipline === PACKAGE_FEE_LINE);
+          return w ? { fee: w.fee, billedToDate: w.billedToDate, releasedToDate: w.releasedToDate ?? null, balance: w.balance ?? null } : null;
+        })(),
+        fees: p.disciplines.filter((d) => d.discipline !== PACKAGE_FEE_LINE).map((d) => {
           const n = perUnit.get(`${p.code}|${d.discipline}`) ?? 0;
           const noFee = !d.fee && !d.percent;
           return {

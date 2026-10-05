@@ -1,0 +1,19 @@
+{
+  "description": "The 03-Year Plan workbooks of the 05-Oct-2026 import (DFS.zip, unzipped into import/dfs-2026). Each one goes into its project through the Import Centre service (npm run import:centre). The fee sheet and layout are chosen by the generic rules (design-fee.ts); nothing here overrides them.",
+  "folder": "import/dfs-2026",
+  "projectList": "../../data/project-sources/project-list-dfs-2026.xlsx",
+  "imports": [
+    { "file": "Design Schedule 2026/Phase 1, 2a & 2b/0072_ AtR_Phase 1, 2A & 2B_03YPlan_01012026.xlsx", "project": "ATR-PH1-2A-2B" },
+    { "file": "Design Schedule 2026/Phase 2c/0072_ AtR Phase 2c_03YPlan_01012026.xlsx", "project": "ATR-PH2C" },
+    { "file": "Design Schedule 2026/Phase 3/0072_ AtR Phase 03_3Y Plan_01012026.xlsx", "project": "ATR-03" },
+    { "file": "Design Schedule 2026/Commercial/72P5_AtR_COMMERCIAL_03YPlan_01012026.xlsx", "project": "ATR-C" },
+    { "file": "Design Schedule 2026/Phase 01/0063_ITQE Ph 01_03YPlan_01012026.xlsx", "project": "ITQE-PH1" },
+    { "file": "Design Schedule 2026/Phase 02a/0063_ITQE Ph 02a_03YPlan_01012026.xlsx", "project": "ITQE-PH2A" },
+    { "file": "Design Schedule 2026/Phase 02b/0063_ITQE Ph 02b_03YPlan_01012026.xlsx", "project": "ITQE-PH2B" },
+    { "file": "Design Schedule 2026/Phase 2c & 3a/0063_ITQE Ph 02c_03YPlan_01012026.xlsx", "project": "ITQE-PH2C" },
+    { "file": "Design Schedule 2026/Phase 01/0082_OTR Ph1_03YPlan_01012026.xlsx", "project": "OTR-PH01" },
+    { "file": "0057_SFTW_03YPlan_01012026.xlsx", "project": "SFTW" },
+    { "file": "0093_DBTW_03YPlan_01012025.xlsx", "project": "DBTW" },
+    { "file": "0095_TUIG_ 03YPlan_01012026.xlsx", "project": "TUIG" }
+  ]
+}

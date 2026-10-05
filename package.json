@@ -2,7 +2,7 @@
   "name": "project-drawing-status",
   "version": "1.0.0",
   "private": true,
-  "description": "Project Drawing Status \u2014 a copy of the Design Goals & Delivery Control System with role-based sign-in (Next.js + PostgreSQL)",
+  "description": "Project Drawing Status — a copy of the Design Goals & Delivery Control System with role-based sign-in (Next.js + PostgreSQL)",
   "scripts": {
     "db:setup": "tsx scripts/db-setup.ts",
     "db:reset": "tsx scripts/db-setup.ts --reset",
@@ -21,6 +21,9 @@
     "fy26:import": "tsx scripts/fy26-import.ts",
     "drawings:import": "tsx scripts/drawings-import.ts",
     "projects:import": "tsx scripts/projects-import.ts",
+    "import:diagnose": "tsx scripts/import-diagnose.ts",
+    "import:centre": "tsx scripts/import-centre-run.ts",
+    "import:reconcile": "tsx scripts/import-reconcile.ts",
     "data:repair": "tsx scripts/data-repair.ts",
     "logins:set": "tsx scripts/logins-set.ts",
     "lint": "next lint --dir src --dir scripts --dir tests",

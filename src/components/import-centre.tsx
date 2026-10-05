@@ -23,7 +23,31 @@ interface Inspection {
   detected: FileType | null;
   reason: string;
   mapping: SheetMapping[];
-  designFee: { sheet: string; packages: number; headings: number } | null;
+  designFee: {
+    sheet: string;
+    packages: number;
+    headings: number;
+    layout: string | null;
+    title: { code: string | null; name: string } | null;
+    candidates: { sheet: string; hidden: boolean; layout: string | null; billedTill: number | null; packages: number; revision: number; blocks: { total: number; packageTotal: number; complete: boolean } | null; problem: string | null }[];
+    problem: string | null;
+  } | null;
+}
+
+type FeeLayout = 'AUTO' | 'PACKAGE_TOTAL' | 'DISCIPLINE_BLOCKS';
+const FEE_LAYOUT_LABEL: Record<FeeLayout, string> = {
+  AUTO: 'Automatic (one fee per package when the sheet has a Total Fee / Balance column set; a project already billed per discipline stays so)',
+  PACKAGE_TOTAL: 'One fee per package (Total Fee · Billed till Dec)',
+  DISCIPLINE_BLOCKS: 'Per discipline (AR · ST · MEP · LS blocks)',
+};
+const LAYOUT_NAME: Record<string, string> = { PACKAGE_TOTAL: 'one fee per package', DISCIPLINE_BLOCKS: 'per discipline' };
+
+/** "After the Rain Phase 2c" under "After the Rain" → "Phase 2c". */
+function nameUnder(full: string, parent: string) {
+  const f = full.trim();
+  const p = parent.trim();
+  if (!p || f.length <= p.length || f.toLowerCase().indexOf(p.toLowerCase()) !== 0) return f;
+  return f.slice(p.length).replace(/^[\s|:–—-]+/, '').trim() || f;
 }
 interface Issue {
   severity: string;
@@ -84,6 +108,7 @@ const DISCIPLINES = [
   ['LS', 'Landscape'],
   ['MP', 'Master Planning'],
   ['UD', 'Urban Design'],
+  ['SR', 'Services'],
 ] as const;
 
 const COLS = Array.from({ length: 40 }, (_, i) => (i < 26 ? String.fromCharCode(65 + i) : `A${String.fromCharCode(65 + i - 26)}`));
@@ -105,6 +130,8 @@ export function ImportCentre({ projects, fileTypes, initialRuns }: { projects: {
   const [newProject, setNewProject] = useState({ fullName: '', shortCode: '', parentProjectId: '' });
   const [mapping, setMapping] = useState<Record<string, Record<string, string>>>({});
   const [disciplines, setDisciplines] = useState<Record<string, string>>({});
+  const [feeSheet, setFeeSheet] = useState('');
+  const [feeLayout, setFeeLayout] = useState<FeeLayout>('AUTO');
   const [remembered, setRemembered] = useState(false);
   const [result, setResult] = useState<RunResult | null>(null);
   const [confirmed, setConfirmed] = useState(false);
@@ -157,14 +184,18 @@ export function ImportCentre({ projects, fileTypes, initialRuns }: { projects: {
     }
     setMapping(m);
     setDisciplines(d);
+    setFeeSheet(ins.designFee?.sheet ?? '');
+    // A new project's full name defaults to the Design Fee sheet's own title ("0072 | After the Rain Phase 2c").
+    const title = ins.designFee?.title?.name;
+    if (title) setNewProject((np) => (np.fullName.trim() ? np : { ...np, fullName: title, shortCode: np.shortCode || '' }));
   };
 
-  const reinspect = async (type: FileType | '', pid: string) => {
+  const reinspect = async (type: FileType | '', pid: string, sheet?: string) => {
     if (!uploadId || !type) return;
     setBusy('inspect');
     setError(null);
     try {
-      const data = await post<{ inspection: Inspection; remembered: boolean }>('/api/import-centre/inspect', { uploadId, fileType: type, projectId: pid || null });
+      const data = await post<{ inspection: Inspection; remembered: boolean }>('/api/import-centre/inspect', { uploadId, fileType: type, projectId: pid || null, feeSheet: sheet || null });
       setInspection(data.inspection);
       setRemembered(data.remembered);
       applyInspection(data.inspection);
@@ -180,7 +211,7 @@ export function ImportCentre({ projects, fileTypes, initialRuns }: { projects: {
     fileType,
     projectId: needsProject && projectMode === 'existing' ? projectId : null,
     newProject: needsProject && projectMode === 'new' ? { fullName: newProject.fullName, shortCode: newProject.shortCode || null, parentProjectId: newProject.parentProjectId || null } : null,
-    mapping: { columns: mapping, disciplines },
+    mapping: { columns: mapping, disciplines, feeSheet: feeSheet || null, feeLayout },
     apply,
     confirmed: apply ? confirmed : undefined,
   });
@@ -340,7 +371,17 @@ export function ImportCentre({ projects, fileTypes, initialRuns }: { projects: {
                       <label className="label" htmlFor="np-parent">
                         Part of (optional)
                       </label>
-                      <select id="np-parent" className="select" value={newProject.parentProjectId} onChange={(e) => (setNewProject({ ...newProject, parentProjectId: e.target.value }), reset())}>
+                      <select
+                        id="np-parent"
+                        className="select"
+                        value={newProject.parentProjectId}
+                        onChange={(e) => {
+                          const parent = projects.find((p) => p.id === e.target.value);
+                          // Under "After the Rain", the sheet title "After the Rain Phase 2c" becomes "Phase 2c".
+                          setNewProject({ ...newProject, parentProjectId: e.target.value, fullName: parent ? nameUnder(newProject.fullName, parent.name) : newProject.fullName });
+                          reset();
+                        }}
+                      >
                         <option value="">— none —</option>
                         {projects
                           .filter((p) => !p.parentId)
@@ -369,9 +410,61 @@ export function ImportCentre({ projects, fileTypes, initialRuns }: { projects: {
           </p>
           {busy === 'inspect' && <p className="mt-2 text-[12px] text-ink-mute">Reading the columns…</p>}
           {inspection.designFee && (
-            <p className="mt-2 text-[12px] text-ink-soft">
-              Design Fee sheet &ldquo;{inspection.designFee.sheet}&rdquo;: {formatNumber(inspection.designFee.packages)} package(s) under {formatNumber(inspection.designFee.headings)} heading(s).
-            </p>
+            <div className="mt-2 space-y-2 text-[12px] text-ink-soft" data-fee-sheet="">
+              <p>
+                Design Fee sheet used: &ldquo;{inspection.designFee.sheet}&rdquo;
+                {inspection.designFee.layout ? ` (${LAYOUT_NAME[inspection.designFee.layout] ?? inspection.designFee.layout})` : ''}: {formatNumber(inspection.designFee.packages)} package(s) under{' '}
+                {formatNumber(inspection.designFee.headings)} heading(s)
+                {inspection.designFee.title ? <> · sheet title &ldquo;{[inspection.designFee.title.code, inspection.designFee.title.name].filter(Boolean).join(' | ')}&rdquo;</> : null}.
+              </p>
+              {inspection.designFee.problem && (
+                <p className="text-amber-900" role="alert">
+                  This sheet cannot be read ({inspection.designFee.problem}). The drawings still import; choose another Design Fee sheet below.
+                </p>
+              )}
+              <div className="flex flex-wrap items-end gap-3">
+                {inspection.designFee.candidates.length > 1 && (
+                  <label className="block">
+                    <span className="label">Design Fee sheet</span>
+                    <select
+                      className="select"
+                      value={feeSheet}
+                      onChange={(e) => {
+                        setFeeSheet(e.target.value);
+                        reset();
+                        void reinspect(fileType, projectMode === 'existing' ? projectId : '', e.target.value);
+                      }}
+                    >
+                      {inspection.designFee.candidates.map((c) => (
+                        <option key={c.sheet} value={c.sheet}>
+                          {c.sheet}
+                          {c.hidden ? ' (hidden)' : ''} — {c.problem ? 'cannot be read' : `${formatNumber(c.packages)} packages${c.billedTill ? `, billed till Dec ${c.billedTill}` : ''}`}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <label className="block">
+                  <span className="label">How the fees are read</span>
+                  <select className="select" value={feeLayout} onChange={(e) => (setFeeLayout(e.target.value as FeeLayout), reset())}>
+                    {(Object.keys(FEE_LAYOUT_LABEL) as FeeLayout[]).map((k) => (
+                      <option key={k} value={k}>
+                        {FEE_LAYOUT_LABEL[k]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              {(() => {
+                const c = inspection.designFee.candidates.find((x) => x.sheet === inspection.designFee!.sheet);
+                return c?.blocks ? (
+                  <p className="text-ink-mute">
+                    The sheet also has per-discipline blocks: ₹ {c.blocks.total.toFixed(4)} Cr of the packages&rsquo; ₹ {c.blocks.packageTotal.toFixed(4)} Cr
+                    {c.blocks.complete ? ' — they add up, so "Per discipline" is possible too.' : ' — they do not add up to the package fees, so one fee per package is kept.'}
+                  </p>
+                ) : null;
+              })()}
+            </div>
           )}
           {inspection.mapping.length === 0 && fileType !== 'DESIGN_FEE' && <p className="mt-2 text-[12px] text-amber-900">No sheet of this workbook could be read as this file type.</p>}
           <div className="mt-3 space-y-4">

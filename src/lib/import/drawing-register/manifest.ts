@@ -57,6 +57,10 @@ const dfsHierarchy = z
   })
   .default({ nodeTypes: [], resolveUnlinkedByHeading: true });
 
+/** How a Design Fee sheet's fees are read (design-fee.ts). */
+export const FEE_LAYOUT_CHOICES = ['AUTO', 'DISCIPLINE_BLOCKS', 'PACKAGE_TOTAL'] as const;
+export type FeeLayoutChoice = (typeof FEE_LAYOUT_CHOICES)[number];
+
 const planWorkbook = z.object({
   file: z.string().min(1),
   projectCode: z.string().min(1),
@@ -137,9 +141,20 @@ export const manifestSchema = z.object({
         .optional(),
     })
     .optional(),
-  /** Design Fee sheets: the fee packages (billing Scope) drawings link to. */
+  /** Design Fee sheets: the fee packages (billing Scope) drawings link to.
+   *  layout: AUTO (one fee per package when the sheet has a Total Fee / Balance
+   *  column set, else per discipline), or pinned to DISCIPLINE_BLOCKS /
+   *  PACKAGE_TOTAL for a source whose fees are kept that way. */
   designFees: z
-    .array(z.object({ file: z.string().min(1), projectCode: z.string().min(1), sheet: z.string().min(1), label: z.string().min(1) }))
+    .array(
+      z.object({
+        file: z.string().min(1),
+        projectCode: z.string().min(1),
+        sheet: z.string().min(1),
+        label: z.string().min(1),
+        layout: z.enum(FEE_LAYOUT_CHOICES).default('AUTO'),
+      }),
+    )
     .default([]),
   packageLinking: z.string().optional(),
   /** Project names and hierarchy the source implies: a group project (created

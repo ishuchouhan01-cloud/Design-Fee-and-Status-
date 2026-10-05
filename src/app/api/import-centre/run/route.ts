@@ -18,6 +18,8 @@ const schema = z
       .object({
         columns: z.record(z.string(), z.record(z.string(), letters)).optional(),
         disciplines: z.record(z.string(), z.string().min(1).max(10)).optional(),
+        feeSheet: z.string().max(100).nullish(),
+        feeLayout: z.enum(['AUTO', 'PACKAGE_TOTAL', 'DISCIPLINE_BLOCKS']).nullish(),
       })
       .nullish(),
     apply: z.boolean(),

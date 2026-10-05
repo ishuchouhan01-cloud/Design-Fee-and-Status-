@@ -333,7 +333,8 @@ describe.skipIf(!available)('Design Fee Schedule (DFS) and billing (PoaRR, Viole
       const [{ n }] = await db
         .select({ n: sql<number>`count(distinct ${packages.id})::int` })
         .from(packages)
-        .where(sql`${packages.wbsNodeId} is not null or exists (select 1 from ${drawings} d where d.package_id = ${packages.id}) or exists (select 1 from package_fees f where f.package_id = ${packages.id})`);
+        // Only packages that hold drawings are counted: a package with none is an empty row (not shown).
+        .where(sql`${packages.archivedAt} is null and exists (select 1 from ${drawings} d where d.package_id = ${packages.id} and d.archived_at is null)`);
       const t = modelTotals(m);
       expect(t.packagesTotal + t.packagesNa).toBe(n);
     });

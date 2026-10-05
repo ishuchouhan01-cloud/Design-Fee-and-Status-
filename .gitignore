@@ -22,6 +22,7 @@ import-reports/
 # Source workbooks (keep them out of version control; put them in ./import locally)
 import/*.xlsx
 import/*.xlsm
+import/dfs-2026/
 !import/.gitkeep
 
 .DS_Store

@@ -77,27 +77,30 @@ describe('T  Roll-ups', () => {
       if (r.kind === 'PROJECT' || r.kind === 'NODE') {
         for (const f of ['packagesTotal', 'packagesComplete', 'packagesPending', 'packagesNa'] as const) expect(r[f], `${r.name} ${f}`).toBe(sum(f));
       }
-      if (r.billing) {
+      // A package with one fee for the whole package carries it itself, not its disciplines.
+      if (r.billing && r.group !== 'PKG') {
         const b = c.filter((x) => x.billing && (r.kind !== 'PROJECT' || x.kind !== 'DISCIPLINE'));
         near(r.billing.total, b.reduce((s, x) => s + x.billing!.total, 0));
         near(r.billing.billed, b.reduce((s, x) => s + x.billing!.billed, 0));
         near(r.billing.unbilled, r.billing.total - r.billing.billed);
       }
     }
-    // Each package once: the root total equals the sum over package rows, and the fee lines in SQL.
+    // Each package once: the root total equals the sum over package rows.
     const pkgRows = [...m.rows.values()].filter((r) => r.kind === 'PACKAGE');
     expect(new Set(pkgRows.map((r) => r.packageId)).size).toBe(pkgRows.length);
     const all = modelBilling(m)!;
     near(all.total, pkgRows.reduce((s, r) => s + (r.billing?.total ?? 0), 0));
-    const ids = pkgRows.map((r) => r.packageId!);
+    // The fee lines in SQL (every package in view, shown or not) = shown + left out (no drawing released).
+    const ids = m.packages.filter((p) => p.visible && p.packageId).map((p) => p.packageId!);
     const [fees] = (
       await db.execute(sql`
-        select coalesce(sum(round(f.fee_value::numeric, 4)), 0)::float8 as total, coalesce(sum(round(f.billed_to_date_value::numeric, 4)), 0)::float8 as billed
-        from package_fees f join packages p on p.id = f.package_id
-        where f.applicability <> 'NA' and p.id in (${sql.join(ids.map((x) => sql`${x}`), sql`, `)})`)
+        select (coalesce((select sum(round(f.fee_value::numeric, 4)) from package_fees f where f.applicability <> 'NA' and f.package_id in (${sql.join(ids.map((x) => sql`${x}`), sql`, `)})), 0)
+              + coalesce((select sum(round(p.fee_value::numeric, 4)) from packages p where p.id in (${sql.join(ids.map((x) => sql`${x}`), sql`, `)})), 0))::float8 as total,
+               (coalesce((select sum(round(f.billed_to_date_value::numeric, 4)) from package_fees f where f.applicability <> 'NA' and f.package_id in (${sql.join(ids.map((x) => sql`${x}`), sql`, `)})), 0)
+              + coalesce((select sum(round(p.billed_to_date_value::numeric, 4)) from packages p where p.id in (${sql.join(ids.map((x) => sql`${x}`), sql`, `)})), 0))::float8 as billed`)
     ).rows as { total: number; billed: number }[];
-    expect(Math.abs(all.total - fees.total)).toBeLessThan(1e-6);
-    expect(Math.abs(all.billed - fees.billed)).toBeLessThan(1e-6);
+    expect(Math.abs(all.total + m.excluded.noRelease.total - fees.total)).toBeLessThan(1e-6);
+    expect(Math.abs(all.billed + m.excluded.noRelease.billed - fees.billed)).toBeLessThan(1e-6);
   });
 
   it('Not Applicable only at discipline (or a package marked so); it is out of the "of" denominators', async () => {
@@ -112,18 +115,29 @@ describe('T  Roll-ups', () => {
     const porr = [...m.rows.values()].find((r) => r.name === 'Pursuit of a Radical Rhapsody')!;
     expect(`${porr.packagesComplete} + ${porr.packagesPending} = ${porr.packagesTotal}`).toBe(`${porr.packagesComplete} + ${porr.packagesPending} = ${porr.packagesComplete + porr.packagesPending}`);
     expect(aggregateStatus(porr)).toBe(`${porr.packagesComplete} complete · ${porr.packagesPending} pending`);
-    expect([...m.rows.values()].some((r) => r.kind === 'DISCIPLINE' && r.status === 'NA')).toBe(true);
+    // A Not Applicable discipline has no drawings: it is an empty row, shown only with "Show empty rows" (Edit Mode).
+    expect([...m.rows.values()].some((r) => r.kind === 'DISCIPLINE' && r.status === 'NA')).toBe(false);
+    const withEmpty = await buildDfsModel({ showEmpty: true });
+    expect([...withEmpty.rows.values()].some((r) => r.kind === 'DISCIPLINE' && r.status === 'NA' && r.empty)).toBe(true);
   });
 
   it('no "no drawings yet" (or any banned phrase) in a status response; a package with no drawings is Pending', async () => {
     const body = await (await dfsRoute.GET(req('/api/dfs?expand=packages'))).text();
     for (const p of BANNED_PHRASES) expect(body.toLowerCase()).not.toContain(p);
     const m = await buildDfsModel({});
-    const empty = [...m.rows.values()].filter((r) => r.kind === 'PACKAGE' && r.drawingsTotal === 0 && r.status !== 'NA');
+    // A package with no drawings is an empty row: not shown, counted nowhere …
+    expect([...m.rows.values()].some((r) => r.kind === 'PACKAGE' && r.drawingsTotal === 0)).toBe(false);
+    // … and, shown in Edit Mode, it is Pending, greyed, with no billing.
+    const withEmpty = await buildDfsModel({ showEmpty: true });
+    const empty = [...withEmpty.rows.values()].filter((r) => r.kind === 'PACKAGE' && r.empty && r.status !== 'NA');
     expect(empty.length).toBeGreaterThan(0);
-    for (const r of empty) expect(r.status).toBe('NOT_COMPLETE');
-    // A pending package with an amount to bill is flagged "eligible after completion".
-    expect(empty.some((r) => (r.billingFlags ?? []).includes('ELIGIBLE_AFTER_COMPLETION'))).toBe(true);
+    for (const r of empty) {
+      expect(r.status).toBe('NOT_COMPLETE');
+      expect(r.packagesTotal).toBe(0);
+      expect(r.billing).toBeNull();
+    }
+    // A pending package with released drawings and an amount to bill is flagged "eligible after completion".
+    expect([...m.rows.values()].some((r) => r.kind === 'PACKAGE' && r.status === 'NOT_COMPLETE' && r.drawingsReleased > 0 && (r.billingFlags ?? []).includes('ELIGIBLE_AFTER_COMPLETION'))).toBe(true);
   });
 });
 
@@ -208,18 +222,22 @@ describe('E  Edit Mode', () => {
     expect((await dup.json()).error).toMatch(/already used/);
     const ar = (await db.execute(sql`select id from disciplines where code = 'AR'`)).rows[0] as { id: string };
     await call(disciplinesRoute.POST(req('/api/status/disciplines', 'POST', { packageId: pkg.id, disciplineId: ar.id })));
-    let m = await buildDfsModel({ projectId: vh.id });
+    // With no drawing yet the new package is an empty row: shown in Edit Mode ("Show empty rows"), not counted.
+    let m = await buildDfsModel({ projectId: vh.id, showEmpty: true });
     const pkgRow = [...m.rows.values()].find((r) => r.packageId === pkg.id && r.kind === 'PACKAGE')!;
     expect(pkgRow.responsible).toBe('Test Lead');
     expect(pkgRow.status).toBe('NOT_COMPLETE');
+    expect(pkgRow.empty).toBe(true);
     expect(kids(m, pkgRow.key).map((r) => r.name)).toEqual(['Architecture']);
-    const t1 = modelTotals(await buildDfsModel({}));
-    expect(t1.packagesTotal).toBe(t0.packagesTotal + 1);
+    expect([...(await buildDfsModel({ projectId: vh.id })).rows.values()].some((r) => r.packageId === pkg.id)).toBe(false);
+    expect(modelTotals(await buildDfsModel({})).packagesTotal).toBe(t0.packagesTotal);
     const created = await call(drawingsRoute.POST(req('/api/drawings', 'POST', { projectId: tower.id, packageId: pkg.id, disciplineId: ar.id, drawingNumber: 'BT-AR-0001', drawingName: 'Block test plan', expectedReleaseDate: '2027-01-10' })));
     m = await buildDfsModel({ projectId: vh.id });
     const disc = kids(m, [...m.rows.values()].find((r) => r.packageId === pkg.id && r.kind === 'PACKAGE')!.key)[0];
     expect(disc.drawingsTotal).toBe(1);
-    expect(modelTotals(await buildDfsModel({})).drawingsTotal).toBe(t0.drawingsTotal + 1);
+    const t1 = modelTotals(await buildDfsModel({}));
+    expect(t1.drawingsTotal).toBe(t0.drawingsTotal + 1);
+    expect(t1.packagesTotal).toBe(t0.packagesTotal + 1);
     // Dependencies under the package: the empty-row pattern (add, then close).
     await call(pkgDepsRoute.POST(req(`/api/status/packages/${pkg.id}/dependencies`, 'POST', { department: 'Structure', description: 'Loads from structure', ownerText: 'Test Lead', targetDate: '2026-12-01' }), params(pkg.id)));
     expect((await call(pkgDepsRoute.GET(req(`/api/status/packages/${pkg.id}/dependencies`), params(pkg.id)))).rows).toHaveLength(1);

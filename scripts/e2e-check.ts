@@ -895,7 +895,7 @@ async function dfsChecks() {
   const dbDrawings = (await as<DrawingList>(VIEWER, 'GET', '/api/drawings?pageSize=1')).json.kpis.total;
   check(top.totals.drawingsTotal === dbDrawings, 'DFS: every drawing counted exactly once', `${top.totals.drawingsTotal} / ${dbDrawings}`);
   const towers = (await rows(VIEWER, `parent=P:${porr.id}`)).rows;
-  check(towers.map((r) => `${r.name}:${r.typeLabel}`).join(',') === 'Residential:Tower / Product,Tower 08:Tower / Product,Tower 09:Tower / Product', 'DFS: Pursuit of a Radical Rhapsody holds Residential, Tower 08 and Tower 09');
+  check(towers.map((r) => `${r.name}:${r.typeLabel}`).join(',') === 'Residential:Phase,Tower 08:Tower,Tower 09:Tower', 'DFS: Pursuit of a Radical Rhapsody holds Residential, Tower 08 and Tower 09');
   const P = top.rows.find((r) => r.name === 'Pursuit of a Radical Rhapsody')!;
   const sums = (f: keyof DfsRowJson) => towers.reduce((a, t) => a + (t[f] as number), 0);
   check(P.drawingsTotal === sums('drawingsTotal') && P.drawingsReleased === sums('drawingsReleased') && P.packagesTotal === sums('packagesTotal'), 'DFS: the parent row is the sum of its towers, each counted once', `${P.drawingsReleased} of ${P.drawingsTotal} released`);

@@ -71,6 +71,13 @@
       "when": 1790775684558,
       "tag": "0009_project_drawing_status",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791187200000,
+      "tag": "0010_package_fee_line",
+      "breakpoints": true
     }
   ]
 }

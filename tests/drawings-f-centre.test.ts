@@ -132,9 +132,10 @@ describe.skipIf(!available)('Project List → the project hierarchy', () => {
     expect(top.name).toBe('Pursuit of a Radical Rhapsody');
     const towers = kids(m, top.key);
     expect(towers.map((t) => [t.name, t.typeLabel])).toEqual([
-      ['Residential', 'Tower / Product'],
-      ['Tower 08', 'Tower / Product'],
-      ['Tower 09', 'Tower / Product'],
+      // A project under another is a Phase, or a Tower / Product … by its name.
+      ['Residential', 'Phase'],
+      ['Tower 08', 'Tower'],
+      ['Tower 09', 'Tower'],
     ]);
     expectParentIsSum(m);
     // The source's own validation targets (the manifest), against what the database now holds.
@@ -257,10 +258,15 @@ describe('A workbook of another shape, for a new project — no code changes', (
     expectParentIsSum(m);
     const top = m.rows.get(`P:${projectId}`)!;
     expect(top.name).toBe('Synthetic Park');
-    expect(kids(m, top.key).map((r) => r.name)).toEqual(['Block 1', 'Block 2']);
+    // Block 2 has no drawings yet: an empty row, not shown and not counted …
+    expect(kids(m, top.key).map((r) => r.name)).toEqual(['Block 1']);
     const status = Object.fromEntries([...m.rows.values()].filter((r) => r.kind === 'PACKAGE').map((r) => [r.code, [r.status, r.noDrawings]]));
-    expect(status).toEqual({ 'BLK1-01': ['COMPLETE', false], 'BLK1-02': ['NOT_COMPLETE', false], 'BLK2-01': ['NOT_COMPLETE', true] });
-    expect(top).toMatchObject({ packagesComplete: 1, packagesTotal: 3, drawingsReleased: 3, drawingsTotal: 5 });
+    expect(status).toEqual({ 'BLK1-01': ['COMPLETE', false], 'BLK1-02': ['NOT_COMPLETE', false] });
+    expect(top).toMatchObject({ packagesComplete: 1, packagesTotal: 2, drawingsReleased: 3, drawingsTotal: 5 });
+    // … and back, greyed and Pending, with "Show empty rows" (Edit Mode).
+    const e = await buildDfsModel({ projectId, showEmpty: true });
+    expect(kids(e, `P:${projectId}`).map((r) => [r.name, Boolean(r.empty)])).toEqual([['Block 1', false], ['Block 2', true]]);
+    expect([...e.rows.values()].find((r) => r.code === 'BLK2-01')).toMatchObject({ status: 'NOT_COMPLETE', noDrawings: true, empty: true, packagesTotal: 0 });
   });
 
   it('a second run of the same file creates nothing (idempotent)', async () => {

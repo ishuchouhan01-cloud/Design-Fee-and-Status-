@@ -18,7 +18,8 @@
       "file": "0118_Violet Hill_ 03YPlan_01012026 - Ph 1 trail.xlsx",
       "projectCode": "VIOLET-HILL",
       "sheet": "Design Fee",
-      "label": "Violet Hill Design Fee (CY 26)"
+      "label": "Violet Hill Design Fee (CY 26)",
+      "layout": "DISCIPLINE_BLOCKS"
     }
   ],
   "projects": [

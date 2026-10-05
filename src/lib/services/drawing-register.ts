@@ -517,7 +517,7 @@ export interface ProjectOption {
  * then the towers / products below it, in display order. Driven by the data —
  * any number of levels and children.
  */
-export async function projectOptions(): Promise<ProjectOption[]> {
+export async function projectOptions(opts: { drawingsOnly?: boolean } = {}): Promise<ProjectOption[]> {
   const all = await db.select().from(projects);
   const has = new Set(
     (
@@ -525,10 +525,13 @@ export async function projectOptions(): Promise<ProjectOption[]> {
         .select({ id: projects.id })
         .from(projects)
         .where(
-          or(
-            sql`exists (select 1 from ${drawings} where ${drawings.projectId} = ${projects.id})`,
-            sql`exists (select 1 from ${packages} where ${packages.projectId} = ${projects.id})`,
-          ),
+          // drawingsOnly (Project Drawing Status): a project with no drawings is an empty row, not an option.
+          opts.drawingsOnly
+            ? sql`${projects.archivedAt} is null and exists (select 1 from ${drawings} where ${drawings.projectId} = ${projects.id} and ${drawings.archivedAt} is null)`
+            : or(
+                sql`exists (select 1 from ${drawings} where ${drawings.projectId} = ${projects.id})`,
+                sql`exists (select 1 from ${packages} where ${packages.projectId} = ${projects.id})`,
+              ),
         )
     ).map((r) => r.id),
   );

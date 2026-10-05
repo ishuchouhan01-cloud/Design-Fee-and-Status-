@@ -21,6 +21,7 @@ export const DISCIPLINE_SEED: { code: string; name: string; category: string; so
   { code: 'ELE', name: 'Electrical', category: 'INFRA', sortOrder: 80, dfsGroup: 'MEP' },
   { code: 'IBMS', name: 'Integrated Building Management System', category: 'INFRA', sortOrder: 90, dfsGroup: 'MEP' },
   { code: 'UD', name: 'Urban Design', category: 'DESIGN', sortOrder: 15, dfsGroup: 'AR' },
+  { code: 'SR', name: 'Services', category: 'DESIGN', sortOrder: 35, dfsGroup: 'MEP' },
 ];
 
 /** Aliases seen across the workbooks, mapped onto the canonical discipline. */

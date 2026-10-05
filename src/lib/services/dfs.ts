@@ -27,9 +27,17 @@
  *   Billed = Total of lines whose discipline status is Complete
  *   Unbilled = Total − Billed
  * Billing (Project Drawing Status, Admin): Total = the fee (scope), Billed =
- * the amount billed to date (package_fees.billed_to_date_value), Unbilled =
- * Total − Billed, summed package → discipline → tower → project with each
- * package once. Archived rows are left out everywhere.
+ * the amount billed to date (package_fees.billed_to_date_value, or the
+ * package's own fee line packages.fee_value / billed_to_date_value when the
+ * Design Fee sheet gives one fee per package), Unbilled = Total − Billed,
+ * summed package → discipline → tower → project with each package once. A fee
+ * line with no released drawing contributes nothing (billing-rollup.ts).
+ * Archived rows are left out everywhere.
+ *
+ * Empty rows: a discipline, package, heading or project with no drawings is
+ * not shown and counts nowhere (status, "x complete · y pending", "of y",
+ * Drawings Released, filter options, exports). The data stays; Edit Mode can
+ * show them again ("Show empty rows"), greyed, so a drawing can be added.
  *
  * All counting is done in SQL (grouped by project, package and discipline
  * group); nothing is cached, so a Drawing Control edit shows on the next load.
@@ -40,6 +48,19 @@ import { dfsWbsNodes, disciplines, drawings, packageFees, packages, projects, us
 import { disciplineLabel, NODE_TYPE_LABEL, projectLabel, quarterLabel } from '@/lib/labels';
 import { formatDate } from '@/lib/format';
 import { calendarQuarter, calendarQuarterOf, fiscalQuarterOf } from '@/lib/periods';
+import { nodeTypeOf, PACKAGE_FEE_LINE } from '@/lib/import/drawing-register/design-fee';
+import {
+  addBilling,
+  addExcluded,
+  emptyExcluded,
+  EXCLUDED_NO_RELEASE,
+  lineBilling,
+  REVIEW_REASON_NO_RELEASE,
+  round4,
+  roundBilling,
+  type ExcludedTotals,
+  type ReviewLine,
+} from './billing-rollup';
 import { drawingScheduleStatusSql, drawingWhere, parseDrawingFilters, type DrawingFilters } from './drawing-register';
 
 // ---------------------------------------------------------------------------
@@ -87,6 +108,8 @@ export interface DfsUnit {
   /** The drawings matching the drawing filters (equals `all` without filters). */
   shown: DrawingCounts;
   scope: number | null;
+  /** The stored fee of the line, also when it is Not Applicable (scope is then null). */
+  feeSource: number | null;
   actual: number;
   billedSource: number | null;
   releaseDate: Date | null;
@@ -106,6 +129,13 @@ export interface DfsPackage {
   noDrawings: boolean;
   releaseDate: Date | null;
   units: DfsUnit[];
+  /** Every unit of the package (units is the filtered list). */
+  allUnits: DfsUnit[];
+  /** Drawings and released drawings of the package, whatever the filters. */
+  drawingsAll: number;
+  releasedAll: number;
+  /** The whole-package fee line (one fee per package), when the source gives one. */
+  packageFee: { total: number | null; billed: number | null } | null;
   /** Matches the filters (package status, discipline, search). */
   visible: boolean;
 }
@@ -115,15 +145,38 @@ export interface DfsFilters extends DrawingFilters {
   unitStatus?: string;
   /** A base-DFS heading: only packages under it (DFS Summary). */
   nodeId?: string;
+  /** Edit Mode only: also show rows with no drawings (greyed, "No drawings"). */
+  showEmpty?: boolean;
 }
 
 export type DfsRowKind = 'PROJECT' | 'NODE' | 'PACKAGE' | 'NO_PACKAGE' | 'DISCIPLINE';
+
+/** The levels of the tree, outermost first ("Expand to" opens down to one of them). */
+export const DFS_LEVELS = ['PROJECT', 'PHASE', 'TOWER', 'PACKAGE', 'DISCIPLINE', 'DRAWING'] as const;
+export type DfsLevel = (typeof DFS_LEVELS)[number];
+export const levelRank = (l: DfsLevel) => DFS_LEVELS.indexOf(l);
+export const LEVEL_LABEL: Record<DfsLevel, string> = {
+  PROJECT: 'Project',
+  PHASE: 'Phase',
+  TOWER: 'Tower',
+  PACKAGE: 'Package',
+  DISCIPLINE: 'Discipline',
+  DRAWING: 'Drawing',
+};
+
+/** The tag of a project below another ("Part of"): Tower / Product / Block / Villa by its name, else Phase. */
+export function childProjectTag(name: string): string {
+  const t = nodeTypeOf(name);
+  return t === 'PHASE' || t === 'GROUP' ? 'Phase' : (NODE_TYPE_LABEL[t] ?? 'Phase');
+}
 
 /** One row of the DFS table. */
 export interface DfsRow {
   key: string;
   parentKey: string | null;
   kind: DfsRowKind;
+  /** Project · Phase · Tower (heading) · Package · Discipline. */
+  level: DfsLevel;
   depth: number;
   name: string;
   /** "Tower", "Product", "Block" … for headings and child projects. */
@@ -153,8 +206,10 @@ export interface DfsRow {
   expectedDate: string | null;
   /** Total (scope), Billed (to date), Unbilled — Admin and Super Admin only; removed for other roles. */
   billing: { total: number; billed: number; unbilled: number } | null;
-  /** ELIGIBLE_AFTER_COMPLETION · BILLED_BEFORE_COMPLETION */
+  /** ELIGIBLE_AFTER_COMPLETION · BILLED_BEFORE_COMPLETION · EXCLUDED_NO_RELEASE (shown as "—") */
   billingFlags: string[];
+  /** A row with no drawings, shown only with "Show empty rows" (Edit Mode). */
+  empty?: boolean;
 }
 
 export interface DfsModel {
@@ -164,6 +219,12 @@ export interface DfsModel {
   units: DfsUnit[];
   packages: DfsPackage[];
   filtered: boolean;
+  /** Fee lines left out because none of their drawings is released, with a Billed amount (Billing to review). */
+  review: ReviewLine[];
+  /** Everything left out of the billing: lines with no released drawing, and Not Applicable lines. */
+  excluded: { noRelease: ExcludedTotals; notApplicable: ExcludedTotals };
+  /** The stored amounts of every fee line in view (shown + left out): the source side of the reconciliation. */
+  source: { total: number; billed: number };
 }
 
 // ---------------------------------------------------------------------------
@@ -412,6 +473,7 @@ export async function loadDfs(f: DfsFilters = {}) {
       all: a.all,
       shown: a.shown,
       scope,
+      feeSource: noPackage ? null : (a.fee?.fee ?? null),
       actual: status === 'COMPLETE' ? (scope ?? 0) : 0,
       billedSource,
       releaseDate: releaseDateOf(status, a.all),
@@ -432,7 +494,7 @@ export async function loadDfs(f: DfsFilters = {}) {
   const consider = (projectId: string, packageKey: string, p: (typeof pkgs)[number] | null) => {
     const list = unitsByPackage.get(`${projectId}|${packageKey}`) ?? [];
     if (!p && list.length === 0) return;
-    if (p && !p.wbsNodeId && list.length === 0) return; // a package record with no heading, drawings or fees
+    if (p && !p.wbsNodeId && list.length === 0 && p.feeValue == null) return; // a package record with no heading, drawings or fees
     const allCounts = list.reduce((m, u) => addCounts(m, u.all), zero());
     const explicitNa = list.length > 0 && list.every((u) => u.status === 'NA');
     const status: UnitStatus = p ? statusOf(allCounts, explicitNa) : allCounts.released === allCounts.drawings ? 'COMPLETE' : 'NOT_COMPLETE';
@@ -460,6 +522,10 @@ export async function loadDfs(f: DfsFilters = {}) {
       noDrawings: allCounts.drawings === 0 && status !== 'NA',
       releaseDate: p ? releaseDateOf(status, allCounts) : null,
       units: shownUnits,
+      allUnits: list,
+      drawingsAll: allCounts.drawings,
+      releasedAll: allCounts.released,
+      packageFee: p && (p.feeValue != null || p.billedToDateValue != null) ? { total: p.feeValue, billed: p.billedToDateValue } : null,
       visible,
     });
   };
@@ -491,11 +557,14 @@ function descendantsOf(nodes: { id: string; parentId: string | null }[], id: str
 
 const iso = (d: Date | null) => (d ? d.toISOString() : null);
 
+const LEVEL_OF_KIND: Record<DfsRowKind, DfsLevel> = { PROJECT: 'PROJECT', NODE: 'TOWER', PACKAGE: 'PACKAGE', NO_PACKAGE: 'PACKAGE', DISCIPLINE: 'DISCIPLINE' };
+
 function emptyRow(key: string, parentKey: string | null, kind: DfsRowKind, depth: number, name: string): DfsRow {
   return {
     key,
     parentKey,
     kind,
+    level: LEVEL_OF_KIND[kind],
     depth,
     name,
     typeLabel: null,
@@ -521,28 +590,25 @@ function emptyRow(key: string, parentKey: string | null, kind: DfsRowKind, depth
   };
 }
 
-const addBilling = (a: DfsRow['billing'], b: DfsRow['billing']): DfsRow['billing'] =>
-  !a ? b : !b ? a : { total: a.total + b.total, billed: a.billed + b.billed, unbilled: a.unbilled + b.unbilled };
-
-/** A discipline line's billing: Total = scope, Billed = billed to date; nothing for Not Applicable or no package. */
-function unitBilling(u: DfsUnit): DfsRow['billing'] {
-  if (u.packageKey === NO_PACKAGE || u.status === 'NA') return null;
-  // Rounded here, at the line, so every parent shows exactly the sum of what its children show.
-  const total = round4(u.scope ?? 0);
-  const billed = round4(u.billedSource ?? 0);
-  return { total, billed, unbilled: round4(total - billed) };
+/** A discipline line's billing (billing-rollup.ts): nothing for no package; a Not Applicable line carries none. */
+function unitOutcome(u: DfsUnit, naFee: number | null) {
+  if (u.packageKey === NO_PACKAGE) return { billing: null, excluded: null, na: null };
+  if (u.status === 'NA') {
+    const na = (u.billedSource ?? 0) || (naFee ?? 0) ? { total: round4(naFee ?? 0), billed: round4(u.billedSource ?? 0) } : null;
+    return { billing: null, excluded: null, na };
+  }
+  return { ...lineBilling({ total: u.scope, billed: u.billedSource, released: u.all.released }), na: null };
 }
 
-function billingFlagsOf(status: UnitStatus | null, b: DfsRow['billing']): string[] {
-  if (!b || status !== 'NOT_COMPLETE') return [];
+function billingFlagsOf(status: UnitStatus | null, b: DfsRow['billing'], excluded = false): string[] {
+  if (!b) return excluded ? [EXCLUDED_NO_RELEASE] : [];
+  if (status !== 'NOT_COMPLETE') return [];
   const out: string[] = [];
   if (b.total > 1e-9 || b.billed > 1e-9) out.push('ELIGIBLE_AFTER_COMPLETION');
   if (b.billed > 1e-9) out.push('BILLED_BEFORE_COMPLETION');
   return out;
 }
 
-/** Sums of 4-decimal amounts, cleaned of floating-point noise (4 decimals of a crore). */
-const roundBilling = (b: DfsRow['billing']) => (b ? { total: round4(b.total), billed: round4(b.billed), unbilled: round4(b.unbilled) } : null);
 
 /** Build the whole table model: every row with its roll-up and its child keys. */
 export async function buildDfsModel(f: DfsFilters = {}): Promise<DfsModel> {
@@ -564,25 +630,68 @@ export async function buildDfsModel(f: DfsFilters = {}): Promise<DfsModel> {
   const visiblePkgs = d.packages.filter((p) => p.visible);
   const pkgsOf = (projectId: string) => visiblePkgs.filter((p) => p.projectId === projectId);
 
+  const showEmpty = Boolean(f.showEmpty);
+  const projectName = new Map(d.projects.map((p) => [p.id, projectLabel(p)]));
+  const review: ReviewLine[] = [];
+  const excluded = { noRelease: emptyExcluded(), notApplicable: emptyExcluded() };
+  const source = { total: 0, billed: 0 };
+  const noteSource = (t: number | null | undefined, bl: number | null | undefined) => {
+    source.total = round4(source.total + round4(t ?? 0));
+    source.billed = round4(source.billed + round4(bl ?? 0));
+  };
+  /** Every fee line of a package in view: what it contributes, what is left out, what needs review. */
+  const accountPackage = (pk: DfsPackage) => {
+    if (!pk.packageId) return;
+    const out = new Map<string, ReturnType<typeof unitOutcome>>();
+    for (const u of pk.allUnits) {
+      const o = unitOutcome(u, u.feeSource);
+      out.set(u.key, o);
+      if (u.status === 'NA') noteSource(u.feeSource, u.billedSource);
+      else noteSource(u.scope, u.billedSource);
+      addExcluded(excluded.noRelease, o.excluded);
+      addExcluded(excluded.notApplicable, o.na);
+      if (o.excluded && o.excluded.billed > 1e-9) {
+        review.push({ projectId: pk.projectId, project: projectName.get(pk.projectId) ?? '', packageId: pk.packageId, packageCode: pk.code, packageName: pk.name, discipline: u.group, disciplineName: u.groupName, total: o.excluded.total, billed: o.excluded.billed, reason: REVIEW_REASON_NO_RELEASE });
+      }
+    }
+    const whole = pk.packageFee ? lineBilling({ total: pk.packageFee.total, billed: pk.packageFee.billed, released: pk.releasedAll }) : null;
+    if (pk.packageFee) {
+      noteSource(pk.packageFee.total, pk.packageFee.billed);
+      addExcluded(excluded.noRelease, whole!.excluded);
+      if (whole!.excluded && whole!.excluded.billed > 1e-9) {
+        review.push({ projectId: pk.projectId, project: projectName.get(pk.projectId) ?? '', packageId: pk.packageId, packageCode: pk.code, packageName: pk.name, discipline: PACKAGE_FEE_LINE, disciplineName: 'Whole package', total: whole!.excluded.total, billed: whole!.excluded.billed, reason: REVIEW_REASON_NO_RELEASE });
+      }
+    }
+    return { out, whole };
+  };
+
   // Add a package-or-no-package row with its discipline rows; returns the package row.
   const addPackage = (pk: DfsPackage, parentKey: string, depth: number) => {
+    const acct = accountPackage(pk);
+    // A package with no drawings at all is an empty vertical: not shown, counted nowhere.
+    if (pk.drawingsAll === 0 && !showEmpty) return null;
     const key = `K:${pk.key}`;
     const noPackage = !pk.packageId;
     const r = emptyRow(key, parentKey, noPackage ? 'NO_PACKAGE' : 'PACKAGE', depth, noPackage ? 'Drawings not assigned to a package' : pk.name || pk.code);
     r.code = noPackage ? null : pk.code;
     r.status = noPackage ? null : pk.status;
     r.noDrawings = pk.noDrawings;
+    r.empty = pk.drawingsAll === 0;
     r.releaseDate = iso(pk.releaseDate);
     r.projectId = pk.projectId;
     r.packageId = pk.packageId;
     r.responsible = pk.responsible;
     r.expectedDate = iso(pk.expectedDate);
+    let lineExcluded = false;
     for (const u of pk.units) {
       if (hasDrawingFilter(f) && u.shown.drawings === 0 && !(f.responsible && pk.responsible?.toLowerCase() === f.responsible.toLowerCase())) continue;
+      // A discipline with no drawings is not shown (its fee line is left out of billing either way).
+      if (u.all.drawings === 0 && !showEmpty) continue;
       const uk = `U:${u.key}`;
       const ur = emptyRow(uk, key, 'DISCIPLINE', depth + 1, u.groupName);
       ur.status = u.status;
       ur.noDrawings = u.flags.includes('NO_DRAWINGS');
+      ur.empty = u.all.drawings === 0;
       ur.releaseDate = iso(u.releaseDate);
       ur.drawingsReleased = u.shown.released;
       ur.drawingsTotal = u.shown.drawings;
@@ -591,16 +700,24 @@ export async function buildDfsModel(f: DfsFilters = {}): Promise<DfsModel> {
       ur.projectId = u.projectId;
       ur.packageId = u.packageId;
       ur.group = u.group;
-      ur.billing = unitBilling(u);
-      ur.billingFlags = billingFlagsOf(u.status, ur.billing);
+      const o = acct?.out.get(u.key) ?? { billing: null, excluded: null, na: null };
+      ur.billing = o.billing;
+      ur.billingFlags = billingFlagsOf(u.status, ur.billing, Boolean(o.excluded));
+      if (o.excluded) lineExcluded = true;
       rows.set(uk, ur);
       link(key, uk);
       r.drawingsReleased += ur.drawingsReleased;
       r.drawingsTotal += ur.drawingsTotal;
       if (!noPackage) r.billing = addBilling(r.billing, ur.billing);
     }
-    r.billingFlags = billingFlagsOf(r.status, r.billing);
-    if (!noPackage) {
+    if (acct?.whole) {
+      // One fee for the whole package: on the package row, never split over its disciplines.
+      r.billing = addBilling(r.billing, acct.whole.billing);
+      if (acct.whole.excluded) lineExcluded = true;
+      r.group = PACKAGE_FEE_LINE;
+    }
+    r.billingFlags = billingFlagsOf(r.status, r.billing, lineExcluded);
+    if (!noPackage && !r.empty) {
       r.packagesTotal = pk.status === 'NA' ? 0 : 1;
       r.packagesComplete = pk.status === 'COMPLETE' ? 1 : 0;
       r.packagesPending = pk.status === 'NOT_COMPLETE' ? 1 : 0;
@@ -629,15 +746,20 @@ export async function buildDfsModel(f: DfsFilters = {}): Promise<DfsModel> {
       r.drawingsReleased += x.drawingsReleased;
       r.drawingsTotal += x.drawingsTotal;
     }
+    // An aggregate row whose rows below are all empty is itself empty (shown only with "Show empty rows").
+    r.empty = (children.get(r.key) ?? []).every((c) => rows.get(c)!.empty);
   };
 
   const addProject = (p: (typeof inScope)[number], parentKey: string | null, depth: number): boolean => {
     const key = `P:${p.id}`;
     const r = emptyRow(key, parentKey, 'PROJECT', depth, projectLabel(p));
     r.projectId = p.id;
-    if (parentKey) r.typeLabel = 'Tower / Product';
+    if (parentKey) {
+      r.level = 'PHASE';
+      r.typeLabel = childProjectTag(r.name);
+    }
     rows.set(key, r);
-    // Child projects (towers / products held as their own records).
+    // Child projects (phases, towers / products held as their own records).
     for (const c of [...(byParent.get(p.id) ?? [])].sort(order)) addProject(c, key, depth + 1);
     const own = pkgsOf(p.id);
     const real = own.filter((x) => x.packageId);
@@ -672,9 +794,11 @@ export async function buildDfsModel(f: DfsFilters = {}): Promise<DfsModel> {
         // No package definition anywhere: Discipline → Drawings directly under the project.
         for (const u of loose.units) {
           if (hasDrawingFilter(f) && u.shown.drawings === 0) continue;
+          if (u.all.drawings === 0 && !showEmpty) continue;
           const uk = `U:${u.key}`;
           const ur = emptyRow(uk, key, 'DISCIPLINE', depth + 1, u.groupName);
           ur.status = u.status;
+          ur.empty = u.all.drawings === 0;
           ur.releaseDate = iso(u.releaseDate);
           ur.drawingsReleased = u.shown.released;
           ur.drawingsTotal = u.shown.drawings;
@@ -702,6 +826,7 @@ export async function buildDfsModel(f: DfsFilters = {}): Promise<DfsModel> {
   for (const p of [...(byParent.get(null) ?? [])].sort(order)) if (addProject(p, null, 0)) roots.push(`P:${p.id}`);
   // Child projects were linked to their parent inside addProject; drop duplicates.
   for (const [k, v] of children) children.set(k, [...new Set(v)]);
+  const extra = { review, excluded, source };
   // Filtered to a tower / product: keep the project above it as the heading
   // (PoRR → Tower 08), with the same totals as what is shown under it.
   const byId = new Map(d.projects.map((p) => [p.id, p]));
@@ -718,7 +843,10 @@ export async function buildDfsModel(f: DfsFilters = {}): Promise<DfsModel> {
       const key = `P:${p.id}`;
       const r = emptyRow(key, parentKey, 'PROJECT', i, projectLabel(p));
       r.projectId = p.id;
-      if (parentKey) r.typeLabel = 'Tower / Product';
+      if (parentKey) {
+        r.level = 'PHASE';
+        r.typeLabel = childProjectTag(r.name);
+      }
       r.hasChildren = true;
       rows.set(key, r);
       if (parentKey) children.set(parentKey, [key]);
@@ -729,14 +857,15 @@ export async function buildDfsModel(f: DfsFilters = {}): Promise<DfsModel> {
     for (const k of roots) {
       const r = rows.get(k)!;
       r.parentKey = parentKey;
-      r.typeLabel = r.typeLabel ?? 'Tower / Product';
+      r.level = 'PHASE';
+      r.typeLabel = r.typeLabel ?? childProjectTag(r.name);
     }
     for (const p of [...ancestors].reverse()) sumInto(rows.get(`P:${p.id}`)!);
     for (const r of rows.values()) r.billing = roundBilling(r.billing);
-    return { rows, children, roots: top, units: d.units, packages: d.packages, filtered: d.filtered };
+    return { rows, children, roots: top, units: d.units, packages: d.packages, filtered: d.filtered, ...extra };
   }
   for (const r of rows.values()) r.billing = roundBilling(r.billing);
-  return { rows, children, roots, units: d.units, packages: d.packages, filtered: d.filtered };
+  return { rows, children, roots, units: d.units, packages: d.packages, filtered: d.filtered, ...extra };
 }
 
 /** A row as a role may receive it: no billing without billing permission. */
@@ -756,19 +885,35 @@ export function modelBilling(model: DfsModel) {
   return roundBilling(b);
 }
 
-/** Rows to show: the children of `parent` (roots when null); with `expandTo` every row down to that kind. */
-export function rowsOf(model: DfsModel, parent: string | null, expandTo?: 'PACKAGE') {
+/**
+ * Rows to show: the children of `parent` (roots when null). With `expandTo`,
+ * every row is opened while its level is above that level, so the view stops
+ * at exactly that depth: "PHASE" shows projects and their phases, "TOWER" the
+ * headings (a project without phases goes straight to its headings),
+ * "PACKAGE" the packages, "DISCIPLINE" the discipline rows. "DRAWING" returns
+ * the rows down to disciplines; the drawings load per discipline row.
+ */
+export function rowsOf(model: DfsModel, parent: string | null, expandTo?: DfsLevel) {
   const out: DfsRow[] = [];
+  const stop = expandTo ? Math.min(levelRank(expandTo), levelRank('DISCIPLINE')) : -1;
   const walk = (keys: string[]) => {
     for (const k of keys) {
       const r = model.rows.get(k);
       if (!r) continue;
       out.push(r);
-      if (expandTo && r.kind !== 'PACKAGE' && r.kind !== 'NO_PACKAGE' && r.kind !== 'DISCIPLINE') walk(model.children.get(k) ?? []);
+      if (expandTo && levelRank(r.level) < stop && r.kind !== 'DISCIPLINE') walk(model.children.get(k) ?? []);
     }
   };
   walk(parent ? (model.children.get(parent) ?? []) : model.roots);
   return out;
+}
+
+/** "packages" (the old Expand to Packages) or a level name → a level. */
+export function parseLevel(v: string | null | undefined): DfsLevel | undefined {
+  if (!v) return undefined;
+  const u = v.toUpperCase().replace(/S$/, '');
+  if (u === 'TOWER' || u === 'PRODUCT' || u === 'TOWERS / PRODUCT') return 'TOWER';
+  return (DFS_LEVELS as readonly string[]).includes(u) ? (u as DfsLevel) : undefined;
 }
 
 /** Totals of the whole view (sum of the root rows). */
@@ -850,9 +995,7 @@ export interface DfsSummary {
   total: DfsSummaryBlock;
 }
 
-export function round4(v: number) {
-  return Math.round(v * 10000) / 10000;
-}
+export { round4 };
 
 function billing(units: DfsUnit[]) {
   let total = 0;
@@ -868,6 +1011,11 @@ function billing(units: DfsUnit[]) {
 function summaryBlock(projectId: string | null, name: string, depth: number, pkgs: DfsPackage[], units: DfsUnit[], nameOf: (g: string) => string): DfsSummaryBlock {
   const real = pkgs.filter((p) => p.packageId && p.status !== 'NA');
   const complete = real.filter((p) => p.status === 'COMPLETE').length;
+  // Packages with one fee for the whole package (no split over disciplines): their own line.
+  const whole = real.filter((p) => p.packageFee);
+  const wTotal = round4(whole.reduce((a, p) => a + round4(p.packageFee!.total ?? 0), 0));
+  const wBilled = round4(whole.filter((p) => p.status === 'COMPLETE').reduce((a, p) => a + round4(p.packageFee!.total ?? 0), 0));
+  const unitsBilling = billing(units);
   const row: DfsSummaryRow = {
     key: projectId ?? 'ALL',
     label: name,
@@ -876,7 +1024,9 @@ function summaryBlock(projectId: string | null, name: string, depth: number, pkg
     complete,
     pending: real.length - complete,
     overall: real.length ? complete / real.length : null,
-    ...billing(units),
+    total: round4(unitsBilling.total + wTotal),
+    billed: round4(unitsBilling.billed + wBilled),
+    unbilled: round4(unitsBilling.unbilled + wTotal - wBilled),
   };
   const lines = units.filter((u) => u.packageKey !== NO_PACKAGE && u.status !== 'NA');
   const groups = [...new Set([...GROUP_ORDER, ...lines.map((u) => u.group)])].sort(byGroup);
@@ -885,13 +1035,18 @@ function summaryBlock(projectId: string | null, name: string, depth: number, pkg
     const c = l.filter((u) => u.status === 'COMPLETE').length;
     return { key: `${projectId ?? 'ALL'}|${g}`, label: nameOf(g), discipline: g, packages: l.length, complete: c, pending: l.length - c, overall: l.length ? c / l.length : null, ...billing(l) };
   });
+  if (whole.length) {
+    const c = whole.filter((p) => p.status === 'COMPLETE').length;
+    disc.push({ key: `${projectId ?? 'ALL'}|${PACKAGE_FEE_LINE}`, label: 'Whole package (one fee)', discipline: PACKAGE_FEE_LINE, packages: whole.length, complete: c, pending: whole.length - c, overall: c / whole.length, total: wTotal, billed: wBilled, unbilled: round4(wTotal - wBilled) });
+  }
   return { projectId, name, depth, row, disciplines: disc };
 }
 
 /** DFS Summary — package status and billing per project (and its towers / products), then per discipline. */
 export async function dfsSummary(f: DfsFilters = {}): Promise<DfsSummary> {
   const d = await loadDfs({ projectId: f.projectId, nodeId: f.nodeId });
-  const pkgs = d.packages.filter((p) => p.visible);
+  // As on the Project Drawing Status screen: a package with no drawings counts nowhere.
+  const pkgs = d.packages.filter((p) => p.visible && (p.drawingsAll > 0 || !p.packageId));
   const inPkgs = new Set(pkgs.map((p) => p.key));
   const units = d.units.filter((u) => inPkgs.has(`${u.projectId}|${u.packageKey}`));
   const scope = d.projects.filter((p) => !d.scopeIds || d.scopeIds.includes(p.id));
@@ -1150,6 +1305,8 @@ export function parseDfsFilters(sp: URLSearchParams | Record<string, string | st
   if (us === 'COMPLETE' || us === 'NOT_COMPLETE' || us === 'NA') f.unitStatus = us;
   const node = get('nodeId');
   if (node) f.nodeId = node;
+  // Honoured only for Edit Mode (the screen and the API drop it otherwise).
+  if (get('showEmpty') === '1') f.showEmpty = true;
   delete f.phaseId;
   return f;
 }

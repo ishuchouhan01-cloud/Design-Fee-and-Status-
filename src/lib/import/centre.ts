@@ -47,8 +47,9 @@ import { newId } from '@/lib/ids';
 import { IMPORT_FILE_TYPE_LABEL, projectLabel } from '@/lib/labels';
 import { runDrawingImport } from './drawing-register';
 import { textOf } from './drawing-register/apply';
-import { parseDesignFee } from './drawing-register/design-fee';
-import { manifestSchema, type DrawingManifest } from './drawing-register/manifest';
+import { chooseFeeSheet, feeSheetCandidates, parseDesignFee, type FeeSheetCandidate } from './drawing-register/design-fee';
+import type { DrawingManifest } from './drawing-register/manifest';
+import { centreManifest } from './centre-manifest';
 import { layout, parseSources, sheetDiscipline, type ColumnOverrides } from './drawing-register/parse';
 import { buildPlan, type PlanIssue } from './drawing-register/plan';
 import { at, colIndex, parseCalendarDate, readTextWorkbook, type TextSheet } from './drawing-register/read';
@@ -144,7 +145,17 @@ export interface Inspection {
   detected: CentreFileType | null;
   reason: string;
   mapping: SheetMapping[];
-  designFee: { sheet: string; packages: number; headings: number } | null;
+  designFee: {
+    sheet: string;
+    packages: number;
+    headings: number;
+    layout: string | null;
+    /** The sheet's own title ("0072 | After the Rain Phase 2c"): the default full name of a new project. */
+    title: { code: string | null; name: string } | null;
+    /** Every Design Fee sheet of the workbook, the one used first; the user may choose another. */
+    candidates: FeeSheetCandidate[];
+    problem: string | null;
+  } | null;
 }
 
 const letter = (c: number) => (c >= 0 ? XLSX.utils.encode_col(c) : null);
@@ -177,7 +188,8 @@ export function inspectWorkbook(file: string, fileName: string, want?: CentreFil
   const sheets = readTextWorkbook(file);
   const list = sheets.map((s) => ({ name: s.name, rows: s.rows.length, hidden: s.hidden }));
   const planSheets = sheets.filter((s) => !s.hidden && layout(s)?.title != null && (layout(s)?.title ?? -1) >= 0);
-  const feeSheet = sheets.find((s) => /design fee/i.test(s.name));
+  const feeChoice = chooseFeeSheet(sheets, saved?.feeSheet);
+  const feeSheet = feeChoice ? sheets.find((s) => s.name === feeChoice.sheet) : undefined;
   const accSheet = sheets.find((s) => accLayout(s));
   const listSheet = sheets.map((s) => detectProjectList(s)).find(Boolean);
   let detected: CentreFileType | null = null;
@@ -223,11 +235,13 @@ export function inspectWorkbook(file: string, fileName: string, want?: CentreFil
     }
   }
   if ((type === 'PLAN' || type === 'DESIGN_FEE') && feeSheet) {
+    const candidates = feeSheetCandidates(sheets);
     try {
       const p = parseDesignFee({ file, projectCode: 'PREVIEW' }, feeSheet, { labelPrefix: '^GFC\\s*\\|\\s*', nodeTypes: [] });
-      designFee = { sheet: feeSheet.name, packages: p.packages.length, headings: p.nodes.length };
-    } catch {
-      designFee = null;
+      designFee = { sheet: feeSheet.name, packages: p.packages.length, headings: p.nodes.length, layout: p.layout ?? null, title: p.title ?? null, candidates, problem: null };
+    } catch (e) {
+      // Reported, never fatal: the drawings still import, and another sheet can be chosen.
+      designFee = { sheet: feeSheet.name, packages: 0, headings: 0, layout: null, title: null, candidates, problem: e instanceof Error ? e.message : String(e) };
     }
   }
   if (type === 'ACC') {
@@ -264,6 +278,10 @@ export interface SavedMapping {
   columns?: Record<string, Record<string, string>>;
   /** sheet name → discipline code */
   disciplines?: Record<string, string>;
+  /** The Design Fee sheet chosen for this project, when the workbook has several. */
+  feeSheet?: string | null;
+  /** How its fees are read (AUTO, DISCIPLINE_BLOCKS, PACKAGE_TOTAL). */
+  feeLayout?: 'AUTO' | 'DISCIPLINE_BLOCKS' | 'PACKAGE_TOTAL' | null;
 }
 
 export async function savedMapping(projectId: string | null | undefined, fileType: string): Promise<SavedMapping | null> {
@@ -369,49 +387,26 @@ async function resolveProject(input: CentreImportInput) {
 }
 
 function manifestFor(input: CentreImportInput, code: string, name: string): DrawingManifest {
-  const wb = input.fileName;
-  const sheets = readTextWorkbook(input.file);
-  const fee = sheets.find((s) => /design fee/i.test(s.name));
-  const m = input.mapping ?? {};
-  const year = new Date().getUTCFullYear();
-  return manifestSchema.parse({
-    name: `${IMPORT_FILE_TYPE_LABEL[input.fileType]} — ${name}`,
-    sourceDir: '.',
-    // The sheets the user mapped, else every sheet that reads as a drawing list.
-    planSheetPattern: planSheetPattern(sheets, m),
-    planWorkbooks:
-      input.fileType === 'PLAN'
-        ? [
-            {
-              file: wb,
-              projectCode: code,
-              role: 'CURRENT',
-              label: `${wb} (Import Centre)`,
-              snapshotDate: null,
-              planYear: planYearOf(wb) ?? year,
-              columns: m.columns,
-              disciplines: m.disciplines,
-            },
-          ]
-        : [],
-    designFees: fee && (input.fileType === 'PLAN' || input.fileType === 'DESIGN_FEE') ? [{ file: wb, projectCode: code, sheet: fee.name, label: `${wb} — ${fee.name}` }] : [],
-    dfsHierarchy: { labelPrefix: '^GFC\\s*\\|\\s*', nodeTypes: [], resolveUnlinkedByHeading: true },
-    phaseMap: {},
-  });
+  const fileType = input.fileType === 'DESIGN_FEE' ? 'DESIGN_FEE' : 'PLAN';
+  return centreManifest({ fileName: input.fileName, fileType, sheets: readTextWorkbook(input.file), mapping: input.mapping, code, name });
 }
 
-function planSheetPattern(sheets: TextSheet[], m: SavedMapping) {
-  const mapped = Object.keys(m.columns ?? {}).filter((k) => k !== '*');
-  const names = mapped.length ? mapped : sheets.filter((s) => !s.hidden && (layout(s)?.title ?? -1) >= 0).map((s) => s.name);
-  if (!names.length) return '^$';
-  return `^(${names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})$`;
-}
-
-/** "…03YPlan_01012026…" → 2026; else null. */
-function planYearOf(name: string): number | null {
-  const m = /(\d{2})(\d{2})(20\d{2})/.exec(name) ?? /(20\d{2})/.exec(name);
-  if (!m) return null;
-  return Number(m[3] ?? m[1]);
+/**
+ * The fee layout a project's fees are already stored in: DISCIPLINE_BLOCKS
+ * when its packages carry per-discipline fee lines and no whole-package fee,
+ * PACKAGE_TOTAL the other way round, null when it has no fees yet. A
+ * re-import keeps it unless the user chooses another layout.
+ */
+export async function storedFeeLayout(projectId: string): Promise<'DISCIPLINE_BLOCKS' | 'PACKAGE_TOTAL' | null> {
+  const [r] = await db
+    .select({
+      lines: sql<number>`(select count(*)::int from ${packageFees} f join ${packages} k on k.id = f.package_id where k.project_id = ${projectId} and f.fee_value is not null)`,
+      whole: sql<number>`(select count(*)::int from ${packages} k where k.project_id = ${projectId} and k.fee_value is not null)`,
+    })
+    .from(sql`(select 1) x`);
+  if (r.lines > 0 && r.whole === 0) return 'DISCIPLINE_BLOCKS';
+  if (r.whole > 0 && r.lines === 0) return 'PACKAGE_TOTAL';
+  return null;
 }
 
 /** Dry run (apply = false) or commit (apply = true) of one uploaded workbook. */
@@ -420,6 +415,10 @@ export async function runCentreImport(input: CentreImportInput): Promise<CentreI
   if (input.fileType === 'ACC') return runAcc(input);
   const project = await resolveProject(input);
   if (!project) throw new ImportInputError('Choose a project, or give the full name of a new one.');
+  if (project.existing && !(input.mapping?.feeLayout && input.mapping.feeLayout !== 'AUTO')) {
+    const kept = await storedFeeLayout(project.existing.id);
+    if (kept) input = { ...input, mapping: { ...(input.mapping ?? {}), feeLayout: kept } };
+  }
   const manifest = manifestFor(input, project.code, project.name);
   if (!manifest.planWorkbooks.length && !manifest.designFees.length) throw new ImportInputError('The workbook has no drawing list or Design Fee sheet to import.');
 
@@ -464,7 +463,7 @@ export async function runCentreImport(input: CentreImportInput): Promise<CentreI
   if (!project.existing && projectId) {
     await db.update(projects).set({ createdImportBatchId: result.batchId }).where(eq(projects.id, projectId));
   }
-  if (input.apply && projectId && input.mapping && (input.mapping.columns || input.mapping.disciplines)) {
+  if (input.apply && projectId && input.mapping && (input.mapping.columns || input.mapping.disciplines || input.mapping.feeSheet || input.mapping.feeLayout)) {
     await rememberMapping(db, projectId, input.fileType, input.mapping, input.actor);
   }
   const issues = result.issues.map(toIssue);

@@ -10,6 +10,7 @@ import path from 'node:path';
 import { at, colIndex, parseCalendarDate, parseTimestamp, readTextWorkbook, type TextRow, type TextSheet } from './read';
 import type { DrawingManifest, PlanWorkbookSpec } from './manifest';
 import { parseDesignFee, type DesignFeeParse } from './design-fee';
+import type { PlanIssue } from './plan';
 
 export type NumberKind = 'FULL' | 'COMPOSED' | 'PARTIAL' | 'NONE';
 
@@ -113,7 +114,8 @@ const SCAN_COLS = 80;
 /** Column roles a user can set in the Import Centre (letters, e.g. { batchCode: 'I' }). */
 export type ColumnOverrides = Partial<Record<'location' | 'batchCode' | 'batch' | 'revision' | 'title' | 'number' | 'discipline' | 'releaseDate' | 'issuedTill', string>>;
 
-const DISCIPLINE_TOKENS = new Set(['AR', 'ST', 'MEP', 'LS', 'LDS', 'MP', 'UD', 'ID', 'PHE', 'ELE', 'IBMS', 'INFRA']);
+/** Discipline codes a sheet name or a Discipline cell may carry (disciplines.code; SR = Services). */
+export const DISCIPLINE_TOKENS = new Set(['AR', 'ST', 'MEP', 'LS', 'LDS', 'MP', 'UD', 'ID', 'PHE', 'ELE', 'IBMS', 'INFRA', 'SR']);
 
 /** A sheet's discipline from its name: "AR | Drawing List" → AR, "Drawing list | ST" → ST. */
 export function sheetDiscipline(name: string): string {
@@ -346,6 +348,8 @@ export interface ParsedSources {
   /** Formula cells of the sheets read whose value could not be worked out. */
   formulaIssues?: { workbook: string; sheet: string; row: number; col: number; formula: string; reason: string }[];
   designFees: (DesignFeeParse & { projectCode: string; workbook: string })[];
+  /** Design Fee sheets that could not be read: reported, the rest of the import goes on. */
+  feeIssues?: PlanIssue[];
 }
 
 export function parseSources(manifest: DrawingManifest, sourceFolder: string): ParsedSources {
@@ -462,13 +466,28 @@ export function parseSources(manifest: DrawingManifest, sourceFolder: string): P
     }
   }
   const designFees: ParsedSources['designFees'] = [];
+  const feeIssues: PlanIssue[] = [];
   for (const spec of manifest.designFees) {
     const s = read(spec.file).find((x) => x.name === spec.sheet);
     if (!s) throw new Error(`Design Fee sheet "${spec.sheet}" not found in ${spec.file}`);
     noteFormulas(spec.file, s);
-    const parsed = parseDesignFee(spec, s, manifest.dfsHierarchy);
+    let parsed: DesignFeeParse;
+    try {
+      parsed = parseDesignFee(spec, s, manifest.dfsHierarchy);
+    } catch (e) {
+      // A sheet of another layout never stops the drawings coming in: it is reported.
+      feeIssues.push({
+        severity: 'WARNING',
+        code: 'DESIGN_FEE_LAYOUT_NOT_READ',
+        projectCode: spec.projectCode,
+        workbook: path.basename(spec.file),
+        sheet: spec.sheet,
+        message: `The Design Fee sheet "${spec.sheet}" could not be read (${e instanceof Error ? e.message : String(e)}). No packages or fees were taken from it; the drawings are imported without a package. Choose another Design Fee sheet in the Import Centre.`,
+      });
+      continue;
+    }
     designFees.push({ ...parsed, projectCode: spec.projectCode, workbook: spec.file });
-    sheetsRead.push({ workbook: spec.file, sheet: spec.sheet, rows: parsed.packages.length });
+    sheetsRead.push({ workbook: spec.file, sheet: spec.sheet, rows: parsed.packages.length, layout: parsed.layout });
   }
-  return { plan, register, acc, sheetsRead, warnings, formulaIssues, designFees };
+  return { plan, register, acc, sheetsRead, warnings, formulaIssues, designFees, feeIssues };
 }

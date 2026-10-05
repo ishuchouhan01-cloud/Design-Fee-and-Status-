@@ -16,6 +16,7 @@ import { parseEditedFields } from '@/lib/domain';
 import { newId } from '@/lib/ids';
 import { projectLabel } from '@/lib/labels';
 import { startOfDay } from '@/lib/periods';
+import { PACKAGE_FEE_LINE } from '@/lib/import/drawing-register/design-fee';
 import { updateDrawing } from './drawing-control';
 
 export class EditRuleError extends Error {
@@ -217,6 +218,42 @@ export async function setBilling(input: { packageId: string; group: string; tota
   check(input.billed, 'Billed');
   return db.transaction(async (tx) => {
     const p = await loadPackage(input.packageId, tx);
+    if (input.group === PACKAGE_FEE_LINE) {
+      // The whole-package fee line (one fee per package), on the package itself.
+      const changes: { field: string; from: number | null; to: number | null }[] = [];
+      const set: Record<string, unknown> = {};
+      if (input.total !== undefined && input.total !== p.feeValue) {
+        set.feeValue = input.total;
+        changes.push({ field: 'feeValue', from: p.feeValue, to: input.total });
+      }
+      if (input.billed !== undefined && input.billed !== p.billedToDateValue) {
+        set.billedToDateValue = input.billed;
+        changes.push({ field: 'billedToDateValue', from: p.billedToDateValue, to: input.billed });
+      }
+      if (!changes.length) return { changes };
+      await tx
+        .update(packages)
+        .set({ ...set, userEditedFields: addEdited(p.userEditedFields, changes.map((c) => c.field)), updatedAt: new Date() } as never)
+        .where(eq(packages.id, p.id));
+      for (const c of changes) {
+        await recordAudit(
+          {
+            actor,
+            entityType: 'PACKAGE',
+            entityId: p.id,
+            entityLabel: `${p.packageCode} — ${p.packageName}`,
+            action: 'UPDATE',
+            field: `${c.field === 'feeValue' ? 'billing.total' : 'billing.billed'}.package`,
+            oldValue: c.from == null ? null : String(c.from),
+            newValue: c.to == null ? null : String(c.to),
+            projectId: p.projectId,
+            reason: 'Billing (Edit Mode)',
+          },
+          tx,
+        );
+      }
+      return { changes };
+    }
     const lines = await tx
       .select({ f: packageFees, code: disciplines.code })
       .from(packageFees)

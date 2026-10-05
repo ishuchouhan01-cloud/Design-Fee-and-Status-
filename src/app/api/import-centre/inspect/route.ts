@@ -4,7 +4,7 @@ import { CENTRE_FILE_TYPES, inspectWorkbook, savedMapping, uploadPath } from '@/
 
 export const dynamic = 'force-dynamic';
 
-const schema = z.object({ uploadId: z.string().min(1), fileType: z.enum(CENTRE_FILE_TYPES), projectId: z.string().nullish() }).strict();
+const schema = z.object({ uploadId: z.string().min(1), fileType: z.enum(CENTRE_FILE_TYPES), projectId: z.string().nullish(), feeSheet: z.string().max(100).nullish() }).strict();
 
 /** The column mapping for a chosen file type and project (the remembered one when there is one). */
 export async function POST(req: Request) {
@@ -13,7 +13,9 @@ export async function POST(req: Request) {
     const input = schema.parse(await req.json());
     const up = uploadPath(input.uploadId);
     const saved = await savedMapping(input.projectId, input.fileType);
-    return ok({ inspection: inspectWorkbook(up.file, up.fileName, input.fileType, saved), remembered: Boolean(saved) });
+    // A Design Fee sheet chosen on the screen wins over the one remembered.
+    const use = input.feeSheet ? { ...(saved ?? {}), feeSheet: input.feeSheet } : saved;
+    return ok({ inspection: inspectWorkbook(up.file, up.fileName, input.fileType, use), remembered: Boolean(saved) });
   } catch (e) {
     return fail(e);
   }

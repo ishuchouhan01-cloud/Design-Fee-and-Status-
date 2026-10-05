@@ -141,19 +141,22 @@
       "file": "0059_PoaRR_Residential_03YPlan_01012026.xlsm",
       "projectCode": "POARR-RES",
       "sheet": "Design Fee",
-      "label": "Residential Design Fee (CY 26)"
+      "label": "Residential Design Fee (CY 26)",
+      "layout": "DISCIPLINE_BLOCKS"
     },
     {
       "file": "0059_PoaRR_Tower08_03YPlan_01012026.xlsm",
       "projectCode": "POARR-T08",
       "sheet": "Design Fee",
-      "label": "Tower08 Design Fee (CY 26)"
+      "label": "Tower08 Design Fee (CY 26)",
+      "layout": "DISCIPLINE_BLOCKS"
     },
     {
       "file": "0059_PoaRR_Commercial_03YPlan.xlsx",
       "projectCode": "POARR-T09",
       "sheet": "Design Fee",
-      "label": "Commercial 03YPlan (2023 plan) — Design Fee: the only package definition for Tower 09"
+      "label": "Commercial 03YPlan (2023 plan) — Design Fee: the only package definition for Tower 09",
+      "layout": "DISCIPLINE_BLOCKS"
     }
   ],
   "projects": [

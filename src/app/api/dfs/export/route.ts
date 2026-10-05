@@ -12,7 +12,10 @@ export async function GET(req: Request) {
     const ctx = await requirePermission(req, 'export.run');
     const sp = searchParams(req);
     const format = sp.get('format') === 'csv' ? 'csv' : 'xlsx';
-    const result = await buildDfsExport(parseDfsFilters(sp), format, { billing: userCan(ctx.user, 'billing.read') });
+    const f = parseDfsFilters(sp);
+    // The export follows the screen: empty rows only when Edit Mode shows them.
+    if (f.showEmpty && !(ctx.user.editMode && ctx.user.loginRole !== 'VIEWER')) delete f.showEmpty;
+    const result = await buildDfsExport(f, format, { billing: userCan(ctx.user, 'billing.read') });
     await recordAudit({ actor: ctx.actor, entityType: 'EXPORT', entityId: result.filename, action: 'EXPORT', newValue: `${result.rowCount} rows`, reason: 'Project Drawing Status export' });
     return new Response(new Uint8Array(result.buffer), {
       headers: { 'Content-Type': result.contentType, 'Content-Disposition': `attachment; filename="${result.filename}"`, 'X-Row-Count': String(result.rowCount) },

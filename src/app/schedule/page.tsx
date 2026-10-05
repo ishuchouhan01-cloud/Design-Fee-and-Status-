@@ -20,7 +20,7 @@ export default async function SchedulePage({
 }) {
   const sp = await searchParams;
   const projects = await listProjects();
-  const projectId = sp.projectId ?? projects.find((p) => p.projectCode === 'VIOLET-HILL')?.id ?? projects[0]?.id;
+  const projectId = sp.projectId ?? projects[0]?.id;
   if (!projectId) {
     return (
       <>

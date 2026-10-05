@@ -12,8 +12,14 @@
  * existing APIs; afterwards the open part of the table is loaded again, so
  * status, roll-ups and billing are recomputed at once.
  * Keyboard: Enter / Space toggle a row, → opens, ← closes.
+ *
+ * "Expand to" opens the whole view down to one level (Projects · Phases ·
+ * Towers / Products · Packages · Disciplines · Drawings), following the
+ * filters; the choice is kept per user in this browser. Drawings load per
+ * discipline row, and only when no more than MAX_OPEN_DRAWINGS would open.
  */
 import clsx from 'clsx';
+import Link from 'next/link';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { DFS_LABEL, DFS_TOOLTIP, packageStatusLabel, releaseLabel } from '@/lib/labels';
 import { formatCrore, formatDate, formatNumber, formatOf } from '@/lib/format';
@@ -120,6 +126,49 @@ function Guides({ depth }: { depth: number }) {
 
 function money(v: number | undefined) {
   return v == null ? '—' : formatCrore(v, { symbol: false });
+}
+
+/** A fee line left out of billing (no drawing released) shows "—"; a row without a fee line shows nothing. */
+function billCell(r: DfsRow, v: number | undefined) {
+  if (r.billing) return money(v);
+  return (r.billingFlags ?? []).includes('EXCLUDED_NO_RELEASE') ? '—' : '';
+}
+
+// ---------------------------------------------------------------------------
+// Levels ("Expand to")
+// ---------------------------------------------------------------------------
+
+type Level = DfsRow['level'];
+const LEVELS: { value: Level; label: string }[] = [
+  { value: 'PROJECT', label: DFS_LABEL.expandLevelProjects },
+  { value: 'PHASE', label: DFS_LABEL.expandLevelPhases },
+  { value: 'TOWER', label: DFS_LABEL.expandLevelTowers },
+  { value: 'PACKAGE', label: DFS_LABEL.expandLevelPackages },
+  { value: 'DISCIPLINE', label: DFS_LABEL.expandLevelDisciplines },
+  { value: 'DRAWING', label: DFS_LABEL.expandLevelDrawings },
+];
+const rankOf = (l: Level) => LEVELS.findIndex((x) => x.value === l);
+/** The tag beside a row's name. */
+const LEVEL_TAG: Record<Level, string> = { PROJECT: 'Project', PHASE: 'Phase', TOWER: 'Tower', PACKAGE: 'Package', DISCIPLINE: 'Discipline', DRAWING: 'Drawing' };
+/** "Drawings" opens every discipline row only up to this many drawings. */
+export const MAX_OPEN_DRAWINGS = 2000;
+
+function readLevel(key: string): Level | null {
+  try {
+    const v = window.localStorage.getItem(key);
+    return v && LEVELS.some((l) => l.value === v) ? (v as Level) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeLevel(key: string, v: Level | null) {
+  try {
+    if (v) window.localStorage.setItem(key, v);
+    else window.localStorage.removeItem(key);
+  } catch {
+    /* storage unavailable: the choice is simply not remembered */
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -784,6 +833,8 @@ export function StatusTree({
   billingView,
   canExport,
   editMode,
+  showEmpty = false,
+  storageKey = 'pds.expand',
   canAddTower,
   canMarkNa,
 }: {
@@ -794,6 +845,10 @@ export function StatusTree({
   billingView: boolean;
   canExport: boolean;
   editMode: boolean;
+  /** Edit Mode: rows with no drawings are shown, greyed. */
+  showEmpty?: boolean;
+  /** Where the "Expand to" choice is kept (per user). */
+  storageKey?: string;
   canAddTower: boolean;
   canMarkNa: boolean;
 }) {
@@ -808,6 +863,7 @@ export function StatusTree({
   const [panel, setPanel] = useState<{ key: string; kind: string } | null>(null);
   const [reference, setReference] = useState<Reference | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [level, setLevel] = useState<Level | ''>('');
 
   const cols = billing ? 9 : 6;
 
@@ -895,20 +951,51 @@ export function StatusTree({
     if (willOpen && r.kind !== 'DISCIPLINE' && !kids.has(r.key)) void loadChildren(r.key);
   };
 
-  const expandToPackages = async () => {
-    setBusy(true);
-    flag(setFailed, '__expand', false);
-    try {
-      const res = await getJson<{ rows: DfsRow[] }>(`/api/dfs?expand=packages&${query}`);
-      const parents = res.rows.filter((r) => r.kind === 'PROJECT' || r.kind === 'NODE').map((r) => r.key);
-      merge(res.rows, parents);
-      setOpen(new Set(parents));
-    } catch {
-      flag(setFailed, '__expand', true);
-    } finally {
-      setBusy(false);
-    }
-  };
+  /** Open the whole view down to exactly one level (the filters apply). */
+  const expandTo = useCallback(
+    async (target: Level) => {
+      setNotice(null);
+      setLevel(target);
+      writeLevel(storageKey, target);
+      if (target === 'PROJECT') {
+        setOpen(new Set());
+        return;
+      }
+      setBusy(true);
+      flag(setFailed, '__expand', false);
+      try {
+        // Drawings: the rows down to disciplines; their drawings then load per discipline row.
+        const serverLevel = target === 'DRAWING' ? 'DISCIPLINE' : target;
+        const res = await getJson<{ rows: DfsRow[] }>(`/api/dfs?expand=${serverLevel.toLowerCase()}&${query}`);
+        const parents = res.rows.filter((r) => r.kind !== 'DISCIPLINE' && r.hasChildren && rankOf(r.level) < rankOf(serverLevel)).map((r) => r.key);
+        merge(res.rows, parents);
+        let openKeys = parents;
+        if (target === 'DRAWING') {
+          const units = res.rows.filter((r) => r.kind === 'DISCIPLINE' && r.drawingsTotal > 0);
+          const count = units.reduce((n, r) => n + r.drawingsTotal, 0);
+          if (count > MAX_OPEN_DRAWINGS) {
+            setLevel('DISCIPLINE');
+            setNotice(`${DFS_LABEL.narrowToOpenDrawings} (${formatNumber(count)} drawings would open; at most ${formatNumber(MAX_OPEN_DRAWINGS)}). Opened to Disciplines.`);
+          } else openKeys = [...parents, ...units.map((r) => r.key)];
+        }
+        setOpen(new Set(openKeys));
+      } catch {
+        flag(setFailed, '__expand', true);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [query, merge, storageKey],
+  );
+
+  // The level this user chose last time opens again (localStorage; none in a private window).
+  const restored = useRef(false);
+  useEffect(() => {
+    if (restored.current) return;
+    restored.current = true;
+    const saved = readLevel(storageKey);
+    if (saved && saved !== 'PROJECT' && initialRows.length) void expandTo(saved);
+  }, [storageKey, expandTo, initialRows.length]);
 
   const ordered = useMemo(() => {
     const out: DfsRow[] = [];
@@ -1118,12 +1205,55 @@ export function StatusTree({
             </>
           )}
         </p>
-        <button type="button" className="btn btn-sm" onClick={() => void expandToPackages()} disabled={busy || ordered.length === 0}>
-          {busy ? 'Opening…' : DFS_LABEL.expandToPackages}
-        </button>
-        <button type="button" className="btn btn-sm" onClick={() => setOpen(new Set())}>
+        <label className="inline-flex items-center gap-1.5 text-[12px] text-ink-soft">
+          {DFS_LABEL.expandTo}
+          <select
+            className="select h-7 py-0.5 text-[12px]"
+            aria-label={DFS_LABEL.expandTo}
+            value={level}
+            disabled={busy || ordered.length === 0}
+            onChange={(e) => {
+              if (e.target.value) void expandTo(e.target.value as Level);
+            }}
+            data-expand-level=""
+          >
+            <option value="" disabled>
+              {busy ? 'Opening…' : 'Choose a level'}
+            </option>
+            {LEVELS.map((l) => (
+              <option key={l.value} value={l.value}>
+                {l.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={() => {
+            setOpen(new Set());
+            setLevel('');
+            setNotice(null);
+            writeLevel(storageKey, null);
+          }}
+        >
           {DFS_LABEL.collapseAll}
         </button>
+        {editMode && (
+          <Link
+            className={clsx('btn btn-sm', showEmpty && 'ring-1 ring-brand-500')}
+            href={`?${(() => {
+              const q = new URLSearchParams(query);
+              if (showEmpty) q.delete('showEmpty');
+              else q.set('showEmpty', '1');
+              return q.toString();
+            })()}`}
+            aria-pressed={showEmpty}
+            data-show-empty=""
+          >
+            {showEmpty ? '☑' : '☐'} {DFS_LABEL.showEmptyRows}
+          </Link>
+        )}
         {canExport && (
           <>
             <a className="btn btn-sm" href={`/api/dfs/export?format=xlsx&${query}`}>
@@ -1136,7 +1266,7 @@ export function StatusTree({
         )}
       </div>
       {(failed.has('__expand') || notice) && (
-        <p className="px-3 py-2 text-[12px] text-rag-red" role="alert">
+        <p className="px-3 py-2 text-[12px] text-rag-red" role="alert" data-notice="">
           {notice ?? DFS_LABEL.errorLoad}
         </p>
       )}
@@ -1214,12 +1344,14 @@ export function StatusTree({
                 const td = clsx(CELL, tint, 'group-hover:bg-brand-50');
                 const pkg = r.kind === 'PACKAGE';
                 const actions = editMode ? actionsFor(r, { canAddTower, canMarkNa }) : [];
-                const billEdit = editMode && billingView && r.kind === 'DISCIPLINE' && !!r.packageId && r.status !== 'NA';
+                // Billing is edited on its fee line: a discipline row, or the package row when the fee is per package.
+                const billEdit = editMode && billingView && !!r.packageId && r.status !== 'NA' && (r.kind === 'DISCIPLINE' || (pkg && r.group === 'PKG'));
+                const tag = r.typeLabel ?? LEVEL_TAG[r.level];
                 const eligible = (r.billingFlags ?? []).includes('ELIGIBLE_AFTER_COMPLETION');
                 const early = (r.billingFlags ?? []).includes('BILLED_BEFORE_COMPLETION');
                 return (
                   <Fragment key={r.key}>
-                    <tr className="group" aria-level={r.depth + 1} aria-expanded={r.hasChildren ? isOpen : undefined} data-kind={r.kind}>
+                    <tr className={clsx('group', r.empty && 'text-ink-mute opacity-60')} aria-level={r.depth + 1} aria-expanded={r.hasChildren ? isOpen : undefined} data-kind={r.kind} data-level={r.level} data-empty={r.empty ? '' : undefined}>
                       <td className={clsx(td, 'relative sticky left-0 z-10')} style={{ paddingLeft: padFor(r.depth) }}>
                         <Guides depth={r.depth} />
                         <div className="flex items-start gap-1.5">
@@ -1246,6 +1378,9 @@ export function StatusTree({
                                   <span className="block font-medium text-ink">
                                     {r.name}
                                     {r.code && r.code !== r.name && <span className="ml-2 text-2xs font-normal tabular-nums text-ink-mute">{r.code}</span>}
+                                    <span className="ml-2 text-2xs font-normal text-ink-mute" data-tag="">
+                                      {tag}
+                                    </span>
                                   </span>
                                 }
                                 fields={[
@@ -1265,7 +1400,12 @@ export function StatusTree({
                             ) : (
                               <span className="block font-medium text-ink">
                                 {r.name}
-                                {r.typeLabel && <span className="ml-2 text-2xs font-normal text-ink-mute">{r.typeLabel}</span>}
+                                {r.kind === 'PACKAGE' && r.code && r.code !== r.name && <span className="ml-2 text-2xs font-normal tabular-nums text-ink-mute">{r.code}</span>}
+                                {tag && (
+                                  <span className="ml-2 text-2xs font-normal text-ink-mute" data-tag="">
+                                    {tag}
+                                  </span>
+                                )}
                               </span>
                             )}
                           </div>
@@ -1294,7 +1434,7 @@ export function StatusTree({
                         {editMode && pkg && r.expectedDate && r.status !== 'COMPLETE' && <span className="block text-2xs text-ink-mute">Expected {formatDate(r.expectedDate)}</span>}
                       </td>
                       <td className={clsx(td, NUM)}>{aggregate ? formatOf(r.packagesComplete, r.packagesTotal) : ''}</td>
-                      <td className={clsx(td, NUM)}>{formatOf(r.drawingsReleased, r.drawingsTotal)}</td>
+                      <td className={clsx(td, NUM)}>{r.empty ? <span className="text-2xs">{DFS_LABEL.noDrawings}</span> : formatOf(r.drawingsReleased, r.drawingsTotal)}</td>
                       {billing && (
                         <>
                           <td className={clsx(td, NUM, billingView && 'bg-brand-50/40')}>
@@ -1302,7 +1442,7 @@ export function StatusTree({
                               enabled={billEdit}
                               align="right"
                               label={`Total of ${r.name}`}
-                              display={r.billing ? money(r.billing.total) : ''}
+                              display={billCell(r, r.billing?.total)}
                               fields={[{ key: 'v', label: `${DFS_LABEL.colTotal} (₹ Cr)`, type: 'number', value: r.billing ? String(r.billing.total) : '', width: '7rem' }]}
                               onSave={async (v) => {
                                 await send('/api/status/billing', 'PATCH', { packageId: r.packageId, group: r.group, total: v.v === '' ? null : Number(v.v) });
@@ -1321,7 +1461,7 @@ export function StatusTree({
                                 enabled={billEdit}
                                 align="right"
                                 label={`Billed of ${r.name}`}
-                                display={r.billing ? money(r.billing.billed) : ''}
+                                display={billCell(r, r.billing?.billed)}
                                 fields={[{ key: 'v', label: `${DFS_LABEL.colBilled} (₹ Cr)`, type: 'number', value: r.billing ? String(r.billing.billed) : '', width: '7rem' }]}
                                 onSave={async (v) => {
                                   await send('/api/status/billing', 'PATCH', { packageId: r.packageId, group: r.group, billed: v.v === '' ? null : Number(v.v) });
@@ -1331,7 +1471,7 @@ export function StatusTree({
                             </span>
                           </td>
                           <td className={clsx(td, NUM, billingView && 'bg-brand-50/40')}>
-                            {r.billing ? money(r.billing.unbilled) : ''}
+                            {billCell(r, r.billing?.unbilled)}
                             {eligible && !aggregate && <span className="block text-2xs font-normal text-amber-800">{DFS_LABEL.eligibleAfterCompletion}</span>}
                           </td>
                         </>

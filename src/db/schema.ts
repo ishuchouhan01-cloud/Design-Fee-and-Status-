@@ -223,6 +223,14 @@ export const packages = pgTable(
     /** Archived (soft delete): hidden everywhere, never removed. */
     archivedAt: ts('archived_at'),
     archivedByLabel: text('archived_by_label'),
+    /** One fee for the whole package (Design Fee sheets with a Total Fee /
+     *  Balance column set): Total (Cr.), Billed ("Billed till Dec'yy"), and the
+     *  source's Released Till Date and Balance kept for reconciliation. Null when
+     *  the fee is per discipline (package_fees). Never split over disciplines. */
+    feeValue: doublePrecision('fee_value'),
+    billedToDateValue: doublePrecision('billed_to_date_value'),
+    releasedToDateValue: doublePrecision('released_to_date_value'),
+    balanceValue: doublePrecision('balance_value'),
     createdAt: now(),
     updatedAt: ts('updated_at'),
   },

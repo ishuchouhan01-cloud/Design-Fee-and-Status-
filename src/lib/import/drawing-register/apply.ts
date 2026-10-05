@@ -466,6 +466,13 @@ export async function applyPlan(
       };
       if (!edited.has('packageName')) set.packageName = p.name;
       if (p.responsible && !edited.has('responsible')) set.responsibleText = p.responsible;
+      // The whole-package fee line; an amount a person set in Edit Mode (Billing) is kept.
+      if (p.packageFee) {
+        if (!edited.has('feeValue')) set.feeValue = p.packageFee.fee;
+        if (!edited.has('billedToDateValue')) set.billedToDateValue = p.packageFee.billedToDate;
+        set.releasedToDateValue = p.packageFee.releasedToDate;
+        set.balanceValue = p.packageFee.balance;
+      }
       await tx.update(packages).set(set as never).where(eq(packages.id, found.id));
       row = found;
     } else {
@@ -487,6 +494,10 @@ export async function applyPlan(
           importBatchId: batchId,
           createdImportBatchId: batchId,
           wbsNodeId,
+          feeValue: p.packageFee?.fee ?? null,
+          billedToDateValue: p.packageFee?.billedToDate ?? null,
+          releasedToDateValue: p.packageFee?.releasedToDate ?? null,
+          balanceValue: p.packageFee?.balance ?? null,
           updatedAt: stamp,
         })
         .returning({ id: packages.id });
