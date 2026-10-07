@@ -1,7 +1,9 @@
 /**
  * Sign-in for Project Drawing Status: three roles, server-side checks only.
  *
- *   Viewer       no password, one click
+ *   Viewer       no password, one click — unless a Viewer password is set
+ *                (VIEWER_PASSWORD at setup, or `npm run logins:set -- --role VIEWER`),
+ *                e.g. before sharing a public link; then it signs in like the others
  *   Admin        password (ADMIN_PASSWORD at setup), stored as a bcrypt hash
  *   Super Admin  password (SUPER_ADMIN_PASSWORD at setup), stored as a bcrypt hash
  *
@@ -28,7 +30,9 @@ export const LOGIN_USER: Record<LoginRole, { email: string; name: string; role: 
 };
 
 export const PASSWORD_ROLES: LoginRole[] = ['ADMIN', 'SUPER_ADMIN'];
-const ENV_PASSWORD: Record<string, string> = { ADMIN: 'ADMIN_PASSWORD', SUPER_ADMIN: 'SUPER_ADMIN_PASSWORD' };
+/** Roles whose password is optional: none set → no password; set → required. */
+export const OPTIONAL_PASSWORD_ROLES: LoginRole[] = ['VIEWER'];
+const ENV_PASSWORD: Record<string, string> = { ADMIN: 'ADMIN_PASSWORD', SUPER_ADMIN: 'SUPER_ADMIN_PASSWORD', VIEWER: 'VIEWER_PASSWORD' };
 
 /** Per role and address, and per role from anywhere (an address can be spoofed). */
 export const RATE_LIMIT = { attempts: 5, roleAttempts: 20, windowMinutes: 15 };
@@ -57,7 +61,7 @@ const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 /** Hash the passwords given in the environment into login_accounts (only when changed). */
 export async function ensureLoginAccounts(env: Record<string, string | undefined> = process.env): Promise<string[]> {
   const done: string[] = [];
-  for (const role of PASSWORD_ROLES) {
+  for (const role of [...PASSWORD_ROLES, ...OPTIONAL_PASSWORD_ROLES]) {
     const plain = env[ENV_PASSWORD[role]];
     if (!plain) continue;
     const [cur] = await db.select().from(loginAccounts).where(eq(loginAccounts.role, role)).limit(1);
@@ -70,6 +74,26 @@ export async function ensureLoginAccounts(env: Record<string, string | undefined
     done.push(role);
   }
   return done;
+}
+
+/** Which roles have a password stored (no plain text, no hash returned). */
+export async function passwordStatus(): Promise<Record<LoginRole, boolean>> {
+  const rows = await db.select({ role: loginAccounts.role }).from(loginAccounts);
+  const has = new Set(rows.map((r) => r.role));
+  return { VIEWER: has.has('VIEWER'), ADMIN: has.has('ADMIN'), SUPER_ADMIN: has.has('SUPER_ADMIN') };
+}
+
+/** True when the Viewer must give a password (one has been set). */
+export async function viewerNeedsPassword(): Promise<boolean> {
+  const [r] = await db.select({ role: loginAccounts.role }).from(loginAccounts).where(eq(loginAccounts.role, 'VIEWER')).limit(1);
+  return !!r;
+}
+
+/** Remove an optional password (the Viewer goes back to one click). */
+export async function removeOptionalPassword(role: LoginRole): Promise<boolean> {
+  if (!OPTIONAL_PASSWORD_ROLES.includes(role)) throw new LoginError(`The ${LOGIN_ROLE_LABEL[role]} password cannot be removed, only changed.`, 400);
+  const r = await db.delete(loginAccounts).where(eq(loginAccounts.role, role)).returning({ role: loginAccounts.role });
+  return r.length > 0;
 }
 
 async function userFor(role: LoginRole) {
@@ -99,10 +123,10 @@ export interface SignedIn {
   role: LoginRole;
 }
 
-/** Check the password (Admin, Super Admin) and open a session. */
+/** Check the password (Admin, Super Admin; Viewer when one is set) and open a session. */
 export async function signIn(role: LoginRole, password: string | undefined, ip = 'unknown'): Promise<SignedIn> {
   const key = `${role}|${ip}`;
-  if (PASSWORD_ROLES.includes(role)) {
+  if (PASSWORD_ROLES.includes(role) || (OPTIONAL_PASSWORD_ROLES.includes(role) && (await viewerNeedsPassword()))) {
     if ((await recentFailures(key)) >= RATE_LIMIT.attempts || (await recentFailures(role, true)) >= RATE_LIMIT.roleAttempts) {
       throw new LoginError(`Too many wrong passwords. Please wait ${RATE_LIMIT.windowMinutes} minutes and try again.`, 429);
     }

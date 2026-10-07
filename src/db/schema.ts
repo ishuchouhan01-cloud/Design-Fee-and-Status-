@@ -1161,7 +1161,7 @@ export type Fy26ImportIssue = typeof fy26ImportIssues.$inferSelect;
 
 /** The password of each sign-in role (Admin, Super Admin), as a bcrypt hash. Viewer has none. */
 export const loginAccounts = pgTable('login_accounts', {
-  role: text('role').primaryKey(), // ADMIN | SUPER_ADMIN
+  role: text('role').primaryKey(), // ADMIN | SUPER_ADMIN | VIEWER (optional)
   passwordHash: text('password_hash').notNull(),
   updatedAt: ts('updated_at'),
 });

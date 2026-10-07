@@ -27,3 +27,6 @@ import/dfs-2026/
 
 .DS_Store
 Thumbs.db
+
+# Public test link (cloudflared download, logs, current link)
+tools/

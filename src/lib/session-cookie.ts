@@ -15,5 +15,8 @@ export function clearSessionCookie(res: NextResponse, req: Request) {
 }
 
 export function clientAddress(req: Request): string {
+  // Behind a Cloudflare tunnel the edge sets cf-connecting-ip; the client cannot forge it there.
+  const cf = req.headers.get('cf-connecting-ip')?.trim();
+  if (cf) return cf;
   return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || 'local';
 }

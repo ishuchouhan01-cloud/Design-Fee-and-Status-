@@ -11,7 +11,8 @@ const CHOICES: { role: Role; title: string; body: string; password: boolean }[] 
   { role: 'SUPER_ADMIN', title: 'Super Admin', body: 'Every module of the application.', password: true },
 ];
 
-export function LoginPanel({ next, switching }: { next: string | null; switching: boolean }) {
+export function LoginPanel({ next, switching, viewerPassword = false }: { next: string | null; switching: boolean; viewerPassword?: boolean }) {
+  const choices = CHOICES.map((c) => (c.role === 'VIEWER' && viewerPassword ? { ...c, body: 'See Project Drawing Status.', password: true } : c));
   const [chosen, setChosen] = useState<Role | null>(null);
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +48,7 @@ export function LoginPanel({ next, switching }: { next: string | null; switching
 
   return (
     <div className="mt-6 grid gap-3 md:grid-cols-3">
-      {CHOICES.map((c) => {
+      {choices.map((c) => {
         const open = chosen === c.role;
         return (
           <section key={c.role} className={clsx('card flex flex-col p-4', open && 'ring-2 ring-brand-300')} aria-labelledby={`login-${c.role}`}>

@@ -801,9 +801,9 @@ function cloneDatabase(targetUrl, sourceUrl) {
   ok(`${dbName} (cloned)`);
 }
 
-/** Admin and Super Admin passwords from .env, stored as hashes (idempotent). */
+/** Admin, Super Admin (and optional Viewer) passwords from .env, stored as hashes (idempotent). */
 function checkLogins() {
-  if (!process.env.ADMIN_PASSWORD && !process.env.SUPER_ADMIN_PASSWORD) return;
+  if (!process.env.ADMIN_PASSWORD && !process.env.SUPER_ADMIN_PASSWORD && !process.env.VIEWER_PASSWORD) return;
   step('Checking sign-in');
   const res = spawnSync(process.execPath, [BIN.tsx, path.join('scripts', 'logins-set.ts')], { cwd: ROOT, env: process.env, encoding: 'utf8' });
   ok(res.status === 0 ? 'passwords stored as hashes' : 'not checked');
