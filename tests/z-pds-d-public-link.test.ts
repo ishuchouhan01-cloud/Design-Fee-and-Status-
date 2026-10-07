@@ -105,6 +105,9 @@ describe('P  Public test link', () => {
     expect(ps).toMatch(/'tunnel'.*'--url', \$Local/);
     expect(ps).toMatch(/trycloudflare\.com/);
     expect(ps).toMatch(/--status/);
+    // It checks the running app really asks the Viewer for the password before opening a link.
+    expect(ps).toMatch(/api\/auth\/login/);
+    expect(ps).toMatch(/-eq 401/);
     for (const text of [bat, ps]) expect(text).not.toMatch(/PASSWORD\s*=/i);
   });
 });

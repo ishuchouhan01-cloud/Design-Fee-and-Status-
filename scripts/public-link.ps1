@@ -97,6 +97,19 @@ if (-not $status.VIEWER) {
   if (-not $status.VIEWER) { Fail 'The Viewer password was not set. No link was opened.' }
 }
 Say 'Viewer password: set.'
+
+# The running app must enforce it (an app started before this update would not).
+$enforced = $false
+try {
+  Invoke-WebRequest -Uri "$Local/api/auth/login" -Method Post -ContentType 'application/json' -Body '{"role":"VIEWER"}' -UseBasicParsing -TimeoutSec 15 -ErrorAction Stop | Out-Null
+} catch {
+  if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 401) { $enforced = $true }
+}
+if (-not $enforced) {
+  Fail ('The running app still lets the Viewer in without a password: it was started before this update. ' +
+        'Close the Project Drawing Status window, then run START-PUBLIC-LINK.bat again (it starts the app itself).')
+}
+Say 'Checked: the app asks the Viewer for the password.'
 if (-not $status.ADMIN -or -not $status.SUPER_ADMIN) { Fail 'The Admin or Super Admin password is not set (npm run logins:set).' }
 Say 'Admin and Super Admin are protected by their passwords and a lock after'
 Say 'repeated wrong attempts. Use long passwords before sharing a public link.'
