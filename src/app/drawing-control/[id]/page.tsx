@@ -3,8 +3,7 @@ import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { DrawingDetailView } from '@/components/drawing-detail';
 import { Note, PageHeader } from '@/components/ui';
-import { getCurrentUser, ROLE_LABEL } from '@/lib/auth';
-import { can } from '@/lib/rbac';
+import { getCurrentUser, ROLE_LABEL, userCan } from '@/lib/auth';
 import { listPackages } from '@/lib/services/reference';
 import { activeUsers, drawingReference, getDrawingDetail } from '@/lib/services/drawing-register';
 
@@ -14,7 +13,7 @@ export const dynamic = 'force-dynamic';
 export default async function DrawingControlDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await getCurrentUser((await headers()) as unknown as Headers);
-  if (!can(user.role, 'drawing.write')) {
+  if (!userCan(user, 'drawing.write')) {
     return (
       <Note tone="warn">
         Drawing Control is for users who can edit drawings. Your role ({ROLE_LABEL[user.role] ?? user.role}) can view drawings but not change them —{' '}
@@ -45,10 +44,10 @@ export default async function DrawingControlDetailPage({ params }: { params: Pro
       <DrawingDetailView
         detail={detail}
         controls={{
-          write: can(user.role, 'drawing.write'),
-          complete: can(user.role, 'drawing.complete'),
-          reschedule: can(user.role, 'drawing.reschedule'),
-          admin: can(user.role, 'drawing.admin'),
+          write: userCan(user, 'drawing.write'),
+          complete: userCan(user, 'drawing.complete'),
+          reschedule: userCan(user, 'drawing.reschedule'),
+          admin: userCan(user, 'drawing.admin'),
           phases: ref.phases.map((p) => ({ value: p.id, label: p.code, projectId: p.projectId })),
           packages: pkgs.map((p) => ({ value: p.id, label: `${p.packageCode} — ${p.packageName}`, projectId: p.projectId })),
           disciplines: ref.disciplines.map((x) => ({ value: x.id, label: `${x.code} — ${x.name}` })),

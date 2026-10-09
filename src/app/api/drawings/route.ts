@@ -1,4 +1,4 @@
-import { fail, ok, requirePermission, searchParams } from '@/lib/api';
+import { fail, ok, requireEntity, requirePermission, searchParams } from '@/lib/api';
 import { createDrawing } from '@/lib/services/drawing-control';
 import { drawingKpis, listDrawings, parseDrawingFilters } from '@/lib/services/drawing-register';
 import { drawingCreateSchema, rejectForbiddenFields } from '@/lib/validation';
@@ -24,6 +24,8 @@ export async function POST(req: Request) {
     const body = await req.json();
     rejectForbiddenFields(body);
     const input = drawingCreateSchema.parse(body);
+    await requireEntity(ctx, 'edit', 'PROJECT', input.projectId);
+    if (input.packageId) await requireEntity(ctx, 'edit', 'PACKAGE', input.packageId);
     return ok(await createDrawing(input, ctx.actor), 201);
   } catch (e) {
     return fail(e);

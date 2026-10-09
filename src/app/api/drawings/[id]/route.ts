@@ -13,7 +13,9 @@
  * date never changes without reschedule history and a RESCHEDULE_DRAWING
  * audit row.
  */
-import { fail, ok, requirePermission } from '@/lib/api';
+import { fail, ok, requireEntity, requirePermission } from '@/lib/api';
+import { can } from '@/lib/members/policy';
+import { projectOf } from '@/lib/members/principal';
 import { applyReschedule } from '@/lib/reschedule';
 import { getDrawingDetail } from '@/lib/services/drawing-register';
 import {
@@ -29,8 +31,9 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await requirePermission(req, 'drawing.read');
+    const ctx = await requirePermission(req, 'drawing.read');
     const { id } = await params;
+    await requireEntity(ctx, 'status', 'DRAWING', id);
     const detail = await getDrawingDetail(id);
     if (!detail) return fail(new Error('Drawing not found'));
     return ok(detail);
@@ -59,6 +62,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (needed.size === 0) throw new Error('Nothing to update.');
     let ctx = null as Awaited<ReturnType<typeof requirePermission>> | null;
     for (const p of needed) ctx = await requirePermission(req, p);
+    // Edit (or Planning, Drawing Control) on the drawing's project.
+    await requireEntity(ctx!, can(ctx!.user.principal, 'edit', await projectOf('DRAWING', id)) ? 'edit' : 'planning', 'DRAWING', id);
     const actor = ctx!.actor;
 
     const result: Record<string, unknown> = { id };
@@ -88,6 +93,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   try {
     const ctx = await requirePermission(req, 'drawing.admin');
     const { id } = await params;
+    await requireEntity(ctx, 'planning', 'DRAWING', id);
     const body = await req.json().catch(() => ({}));
     const reason = typeof body?.reason === 'string' && body.reason.trim().length >= 3 ? body.reason.trim() : null;
     if (!reason) throw new Error('A reason is required to delete a drawing.');

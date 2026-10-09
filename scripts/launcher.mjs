@@ -809,6 +809,24 @@ function checkLogins() {
   ok(res.status === 0 ? 'passwords stored as hashes' : 'not checked');
 }
 
+/**
+ * Personal sign-in: the first Account Admin, once. When INITIAL_ACCOUNT_ADMIN_EMAIL
+ * is set in .env and no Account Admin exists yet, the member is added and the
+ * one-time link to set the password is shown here (72 hours, single use).
+ */
+function checkMembers() {
+  if (!process.env.INITIAL_ACCOUNT_ADMIN_EMAIL) return;
+  step('Checking members');
+  const res = spawnSync(process.execPath, [BIN.tsx, path.join('scripts', 'members.ts'), 'invite', '--bootstrap'], { cwd: ROOT, env: process.env, encoding: 'utf8' });
+  const out = `${res.stdout ?? ''}`.trim();
+  if (res.status !== 0) return ok('not checked');
+  if (!/https?:\/\//.test(out)) return ok('Account Admin present');
+  ok('first Account Admin added');
+  say('');
+  for (const line of out.split(/\r?\n/)) say(`  ${line.trim()}`);
+  say('');
+}
+
 /** Back up the database before database updates are applied, and note it on the version. */
 function backupBeforeUpdate(version) {
   say('  Backing up the database before updating it...');
@@ -947,6 +965,7 @@ async function main() {
   const db = await checkDatabase();
   if (!db.empty) checkDataRepairs(version);
   checkLogins();
+  checkMembers();
 
   let child;
   let health;

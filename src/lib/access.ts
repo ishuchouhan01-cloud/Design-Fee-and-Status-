@@ -5,6 +5,10 @@
  *   Admin        + Billing, Import, Export and Edit Mode.
  *   Super Admin  everything.
  *
+ * These are the shared role sign-ins. A personal sign-in (role MEMBER,
+ * lib/members) is decided per project by `can()` (lib/members/policy, gate);
+ * the matrix below refuses MEMBER on its own.
+ *
  * This file has no server imports: the middleware (edge) and the API layer
  * (Node) use the same rules. The API layer also checks the existing
  * permissions (lib/rbac) — this is an extra gate, never a replacement.
@@ -13,6 +17,15 @@ export const LOGIN_ROLES = ['VIEWER', 'ADMIN', 'SUPER_ADMIN'] as const;
 export type LoginRole = (typeof LOGIN_ROLES)[number];
 
 export const LOGIN_ROLE_LABEL: Record<LoginRole, string> = { VIEWER: 'Viewer', ADMIN: 'Admin', SUPER_ADMIN: 'Super Admin' };
+
+/** Every role a session cookie can carry: the shared sign-ins and MEMBER (personal email sign-in). */
+export const SESSION_ROLES = [...LOGIN_ROLES, 'MEMBER'] as const;
+export type SessionRole = (typeof SESSION_ROLES)[number];
+export const SESSION_ROLE_LABEL: Record<SessionRole, string> = { ...LOGIN_ROLE_LABEL, MEMBER: 'Member' };
+
+export function isSessionRole(v: unknown): v is SessionRole {
+  return typeof v === 'string' && (SESSION_ROLES as readonly string[]).includes(v);
+}
 
 export const SESSION_COOKIE = 'pds_session';
 
@@ -26,6 +39,8 @@ export function isPublicPath(pathname: string): boolean {
     pathname === '/login' ||
     pathname === '/api/auth/login' ||
     pathname === '/api/auth/logout' ||
+    pathname === '/api/auth/invite' ||
+    pathname.startsWith('/invite/') ||
     pathname === '/api/health' ||
     pathname.startsWith('/_next/') ||
     pathname === '/icon.svg' ||
@@ -34,14 +49,15 @@ export function isPublicPath(pathname: string): boolean {
 }
 
 /** The screen each role starts on. */
-export function homeFor(role: LoginRole): string {
+export function homeFor(role: SessionRole): string {
   return role === 'SUPER_ADMIN' ? '/' : '/drawings';
 }
 
 const under = (pathname: string, prefix: string) => pathname === prefix || pathname.startsWith(`${prefix}/`);
 
 /** Screens (page routes). */
-export function pageAllowed(role: LoginRole, pathname: string, search = ''): boolean {
+export function pageAllowed(role: SessionRole, pathname: string, search = ''): boolean {
+  if (role === 'MEMBER') return false;
   if (role === 'SUPER_ADMIN') return true;
   if (pathname === '/login' || under(pathname, '/settings')) return true;
   if (pathname === '/drawings') {
@@ -54,7 +70,8 @@ export function pageAllowed(role: LoginRole, pathname: string, search = ''): boo
 }
 
 /** API routes. */
-export function apiAllowed(role: LoginRole, method: string, pathname: string, search = ''): boolean {
+export function apiAllowed(role: SessionRole, method: string, pathname: string, search = ''): boolean {
+  if (role === 'MEMBER') return false;
   const m = method.toUpperCase();
   const read = m === 'GET' || m === 'HEAD';
   if (under(pathname, '/api/auth')) return true;
@@ -92,7 +109,7 @@ export function apiAllowed(role: LoginRole, method: string, pathname: string, se
 
 export interface CookieClaims {
   token: string;
-  role: LoginRole;
+  role: SessionRole;
   expires: number;
 }
 
@@ -120,7 +137,7 @@ export async function readCookie(value: string | undefined | null, secret: strin
   const parts = value.split('.');
   if (parts.length !== 4) return null;
   const [token, role, exp, sig] = parts;
-  if (!isLoginRole(role) || !/^\d+$/.test(exp) || !/^[A-Za-z0-9_-]{20,}$/.test(token)) return null;
+  if (!isSessionRole(role) || !/^\d+$/.test(exp) || !/^[A-Za-z0-9_-]{20,}$/.test(token)) return null;
   const want = await hmac(secret, `${token}.${role}.${exp}`);
   if (want.length !== sig.length) return null;
   let diff = 0;

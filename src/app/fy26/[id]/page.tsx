@@ -4,8 +4,7 @@ import { headers } from 'next/headers';
 import { DependencyList, type DependencyItem } from '@/components/fy26-dependencies';
 import { PackageEditor } from '@/components/fy26-package-editor';
 import { Card, CompletionBadge, DateCell, Note, PageHeader } from '@/components/ui';
-import { getCurrentUser } from '@/lib/auth';
-import { can } from '@/lib/rbac';
+import { getCurrentUser, userCan } from '@/lib/auth';
 import { queryAudit } from '@/lib/audit';
 import { fy26Reference, getFy26Package, listDependencies, listRevisions } from '@/lib/services/fy26';
 
@@ -28,7 +27,7 @@ export default async function Fy26PackagePage({ params }: { params: Promise<{ id
     queryAudit({ entityType: 'FY26_PACKAGE', entityId: id, pageSize: 25 }),
   ]);
 
-  const canWrite = can(user.role, 'fy26.write');
+  const canWrite = userCan(user, 'fy26.write');
   const phaseOptions = reference.phases
     .filter((p) => p.projectId === pkg.projectId)
     .map((p) => ({ value: p.id, label: p.name }));

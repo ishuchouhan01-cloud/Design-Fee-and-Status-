@@ -25,10 +25,9 @@ import { FilterBar, type FilterDef } from '@/components/filter-bar';
 import { Pagination } from '@/components/pagination';
 import { RescheduleButton } from '@/components/reschedule-dialog';
 import { ActualRelease, Card, DateCell, DrawingNumber, Kpi, Note, PageHeader, ReleaseBadge, ScheduleBadge, TableWrap } from '@/components/ui';
-import { getCurrentUser, ROLE_LABEL } from '@/lib/auth';
+import { getCurrentUser, ROLE_LABEL, userCan } from '@/lib/auth';
 import { listPackages } from '@/lib/services/reference';
 import { SCHEDULE_STATUSES, SCHEDULE_STATUS_LABEL } from '@/lib/domain';
-import { can } from '@/lib/rbac';
 import {
   activeUsers,
   drawingKpis,
@@ -57,7 +56,7 @@ const iso = (d: Date | null | undefined) => (d ? new Date(d).toISOString() : nul
 export default async function DrawingControlPage({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const sp = await searchParams;
   const user = await getCurrentUser((await headers()) as unknown as Headers);
-  if (!can(user.role, 'drawing.write')) {
+  if (!userCan(user, 'drawing.write')) {
     return (
       <>
         <PageHeader title="Drawing Control" crumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Drawing Control' }]} />
@@ -72,12 +71,12 @@ export default async function DrawingControlPage({ searchParams }: { searchParam
     );
   }
   const perms = {
-    write: can(user.role, 'drawing.write'),
-    complete: can(user.role, 'drawing.complete'),
-    reschedule: can(user.role, 'drawing.reschedule'),
-    admin: can(user.role, 'drawing.admin'),
+    write: userCan(user, 'drawing.write'),
+    complete: userCan(user, 'drawing.complete'),
+    reschedule: userCan(user, 'drawing.reschedule'),
+    admin: userCan(user, 'drawing.admin'),
   };
-  const tabs = TABS.filter((t) => can(user.role, t.perm));
+  const tabs = TABS.filter((t) => userCan(user, t.perm));
   const tab = tabs.find((t) => t.key === sp.tab)?.key ?? 'drawings';
   const filters = parseDrawingFilters(sp);
   const [ref, people, kpis] = await Promise.all([drawingReference(filters.projectId), activeUsers(), drawingKpis(filters)]);

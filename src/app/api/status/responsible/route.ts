@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { fail, ok } from '@/lib/api';
+import { fail, ok, requireEntity } from '@/lib/api';
 import { setResponsible } from '@/lib/services/status-edit';
 import { requireEdit } from '@/lib/status-api';
 
@@ -12,6 +12,7 @@ export async function PATCH(req: Request) {
   try {
     const ctx = await requireEdit(req, 'drawing.write');
     const b = schema.parse(await req.json());
+    await requireEntity(ctx, 'edit', b.kind, b.id);
     return ok(await setResponsible(b.kind, b.id, b.name, ctx.actor));
   } catch (e) {
     return fail(e);

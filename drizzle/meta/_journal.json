@@ -78,6 +78,13 @@
       "when": 1791187200000,
       "tag": "0010_package_fee_line",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791532800000,
+      "tag": "0011_members",
+      "breakpoints": true
     }
   ]
 }

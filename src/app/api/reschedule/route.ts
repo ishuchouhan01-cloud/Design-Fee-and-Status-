@@ -7,7 +7,9 @@
  * There is no way to move dates without having been able to see the preview,
  * and no path that writes without an explicit confirm (spec §13, §43).
  */
-import { fail, ok, requirePermission } from '@/lib/api';
+import { fail, ok, requireProject, requirePermission } from '@/lib/api';
+import { can } from '@/lib/members/policy';
+import { projectsOf } from '@/lib/members/principal';
 import { applyReschedule, previewReschedule } from '@/lib/reschedule';
 import { resolveScopeIds } from '@/lib/repo/entities';
 import { rescheduleSchema } from '@/lib/validation';
@@ -41,6 +43,12 @@ export async function POST(req: Request) {
       includeCompleted: false,
     });
     if (ids.length === 0) throw new Error('The selected scope contains no incomplete records to reschedule.');
+    // Every record moved must belong to a project where the person may move it:
+    // drawings and packages with Edit (or Planning), goals and deliverables with Planning.
+    for (const projectId of new Set(await projectsOf(input.entityType, ids))) {
+      const action = (input.entityType === 'DRAWING' || input.entityType === 'PACKAGE') && can(ctx.user.principal, 'edit', projectId) ? 'edit' : 'planning';
+      await requireProject(ctx, action, projectId);
+    }
     if (input.newExpectedDate && ids.length > 1 && input.scope !== 'SELECTION' && input.scope !== 'ITEM') {
       // Moving many items to one identical date is almost always a mistake;
       // a uniform shift is what scope-level rescheduling means.

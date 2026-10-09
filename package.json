@@ -26,6 +26,8 @@
     "import:reconcile": "tsx scripts/import-reconcile.ts",
     "data:repair": "tsx scripts/data-repair.ts",
     "logins:set": "tsx scripts/logins-set.ts",
+    "members:invite": "tsx scripts/members.ts invite",
+    "members:migrate": "tsx scripts/members.ts migrate",
     "lint": "next lint --dir src --dir scripts --dir tests",
     "typecheck": "tsc --noEmit -p .",
     "versions": "node scripts/versions.mjs list",

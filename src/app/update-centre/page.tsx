@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import { headers } from 'next/headers';
-import { getCurrentUser, ROLE_LABEL } from '@/lib/auth';
-import { can } from '@/lib/rbac';
+import { getCurrentUser, ROLE_LABEL, userCan } from '@/lib/auth';
 import { Card, Kpi, Note, PageHeader } from '@/components/ui';
 import { FilterBar, type FilterDef } from '@/components/filter-bar';
 import { Pagination } from '@/components/pagination';
@@ -22,7 +21,7 @@ export default async function UpdateCentrePage({
   const entity = sp.entity === 'DRAWING' ? 'DRAWING' : 'DELIVERABLE';
   const user = await getCurrentUser((await headers()) as unknown as Headers);
   // Hide update controls the server would refuse anyway.
-  const canBulk = can(user.role, 'bulk.update') && can(user.role, entity === 'DRAWING' ? 'drawing.write' : 'deliverable.write');
+  const canBulk = userCan(user, 'bulk.update') && userCan(user, entity === 'DRAWING' ? 'drawing.write' : 'deliverable.write');
   const filters = parseFilters({ ...sp, pageSize: sp.pageSize ?? '100' });
 
   const [projects, disciplines, packages, owners] = await Promise.all([

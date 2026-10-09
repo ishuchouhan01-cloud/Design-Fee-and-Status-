@@ -4,8 +4,7 @@ import { headers } from 'next/headers';
 import { FilterBar, type FilterDef } from '@/components/filter-bar';
 import { Pagination } from '@/components/pagination';
 import { Card, CompletionBadge, DateCell, Empty, Kpi, Note, PageHeader, TableWrap } from '@/components/ui';
-import { getCurrentUser } from '@/lib/auth';
-import { can } from '@/lib/rbac';
+import { getCurrentUser, userCan } from '@/lib/auth';
 import {
   dependenciesFor,
   fy26Kpis,
@@ -273,7 +272,7 @@ export default async function Fy26Page({ searchParams }: { searchParams: Promise
         <Pagination page={result.page} pageCount={pageCount} total={result.total} pageSize={result.pageSize} />
       </Card>
 
-      {!can(user.role, 'fy26.write') ? (
+      {!userCan(user, 'fy26.write') ? (
         <Note>Your role can view this module but not change it. Editing needs the Editor role or above.</Note>
       ) : null}
     </>

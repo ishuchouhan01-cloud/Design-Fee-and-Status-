@@ -34,7 +34,8 @@ vi.mock('@/lib/auth', async (importOriginal) => {
         await db.insert(users).values(row);
         u = { ...row, createdAt: new Date() };
       }
-      return { id: u.id, name: u.name, email: u.email, role: u.role as 'ADMIN' | 'MANAGER' | 'EDITOR' | 'VIEWER', loginRole: 'SUPER_ADMIN' as const, sessionId: null, editMode: false, extraPermissions: [] };
+      const { legacyPrincipal } = await import('@/lib/members/principal');
+      return { id: u.id, name: u.name, email: u.email, role: u.role as 'ADMIN' | 'MANAGER' | 'EDITOR' | 'VIEWER', loginRole: 'SUPER_ADMIN' as const, sessionId: null, editMode: false, extraPermissions: [], principal: legacyPrincipal('SUPER_ADMIN'), member: null, emergency: false };
     },
   };
 });

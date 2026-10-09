@@ -694,7 +694,8 @@ async function runAcc(input: CentreImportInput): Promise<CentreImportResult> {
 // History and undo
 // ---------------------------------------------------------------------------
 
-export async function importHistory(limit = 50) {
+/** The latest import runs — of the person's projects when scoped (runs without a project only unscoped). */
+export async function importHistory(limit = 50, scope: string[] | null = null) {
   const rows = await db
     .select()
     .from(drawingImportBatches)
@@ -704,7 +705,8 @@ export async function importHistory(limit = 50) {
   const prj = await db.select({ id: projects.id, displayName: projects.displayName, projectName: projects.projectName, projectCode: projects.projectCode }).from(projects);
   const nameOf = new Map(prj.map((p) => [p.id, projectLabel(p)]));
   const latest = rows.find((r) => !r.undoneAt);
-  return rows.map((r) => ({
+  const keep = scope ? new Set(scope) : null;
+  return rows.filter((r) => !keep || (r.projectId && keep.has(r.projectId))).map((r) => ({
     id: r.id,
     who: r.startedByLabel,
     when: r.finishedAt ?? r.startedAt,

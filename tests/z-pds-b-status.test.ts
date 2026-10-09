@@ -257,8 +257,15 @@ describe('E  Edit Mode', () => {
 describe.skipIf(!available)('I  A re-import keeps what was edited', () => {
   it('package name, code and Responsible Person, a billed amount and a drawing name survive the import; nothing is duplicated', async () => {
     const [vh] = await db.select().from(projects).where(eq(projects.projectCode, 'VIOLET-HILL'));
-    const [p] = await db.select().from(packages).where(and(eq(packages.projectId, vh.id), isNull(packages.archivedAt), sql`${packages.sourceWorkbook} is not null`)).limit(1);
-    const [f] = await db.select().from(packageFees).where(eq(packageFees.packageId, p.id)).limit(1);
+    // A fee line that carries billing (not Not Applicable), chosen the same way on every run.
+    const [{ f }] = await db
+      .select({ f: packageFees })
+      .from(packageFees)
+      .innerJoin(packages, eq(packageFees.packageId, packages.id))
+      .where(and(eq(packages.projectId, vh.id), isNull(packages.archivedAt), sql`${packages.sourceWorkbook} is not null`, sql`coalesce(${packageFees.applicability}, '') <> 'NA'`))
+      .orderBy(packages.id, packageFees.id)
+      .limit(1);
+    const [p] = await db.select().from(packages).where(eq(packages.id, f.packageId));
     const group = ((await db.execute(sql`select coalesce(dfs_group, code) as g from disciplines where id = ${f.disciplineId}`)).rows[0] as { g: string }).g;
     const [d] = await db.select().from(drawings).where(and(eq(drawings.projectId, vh.id), isNull(drawings.archivedAt))).limit(1);
     const oldCode = p.packageCode;

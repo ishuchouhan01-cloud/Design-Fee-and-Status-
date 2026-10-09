@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { fail, ok, requirePermission } from '@/lib/api';
+import { fail, ok, requireEntity, requirePermission } from '@/lib/api';
 import { addPackageDependency, listPackageDependencies } from '@/lib/services/status-edit';
 import { requireEdit } from '@/lib/status-api';
 import { optionalDateString } from '@/lib/validation';
@@ -18,8 +18,9 @@ const schema = z
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await requirePermission(req, 'drawing.read');
+    const ctx = await requirePermission(req, 'drawing.read');
     const { id } = await params;
+    await requireEntity(ctx, 'status', 'PACKAGE', id);
     return ok({ rows: await listPackageDependencies(id) });
   } catch (e) {
     return fail(e);
@@ -30,6 +31,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   try {
     const ctx = await requireEdit(req, 'drawing.write');
     const { id } = await params;
+    await requireEntity(ctx, 'edit', 'PACKAGE', id);
     return ok(await addPackageDependency(id, schema.parse(await req.json()), ctx.actor), 201);
   } catch (e) {
     return fail(e);

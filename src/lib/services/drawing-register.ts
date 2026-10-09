@@ -517,8 +517,10 @@ export interface ProjectOption {
  * then the towers / products below it, in display order. Driven by the data —
  * any number of levels and children.
  */
-export async function projectOptions(opts: { drawingsOnly?: boolean } = {}): Promise<ProjectOption[]> {
-  const all = await db.select().from(projects);
+export async function projectOptions(opts: { drawingsOnly?: boolean; scope?: string[] | null } = {}): Promise<ProjectOption[]> {
+  // Only the person's projects (lib/members can), when scoped.
+  const inScope = opts.scope ? new Set(opts.scope) : null;
+  const all = (await db.select().from(projects)).filter((p) => !inScope || inScope.has(p.id));
   const has = new Set(
     (
       await db

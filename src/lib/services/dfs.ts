@@ -147,6 +147,8 @@ export interface DfsFilters extends DrawingFilters {
   nodeId?: string;
   /** Edit Mode only: also show rows with no drawings (greyed, "No drawings"). */
   showEmpty?: boolean;
+  /** The projects the person may see (lib/members can); null / absent = all. Set by the server, never from the address. */
+  scopeProjectIds?: string[] | null;
 }
 
 export type DfsRowKind = 'PROJECT' | 'NODE' | 'PACKAGE' | 'NO_PACKAGE' | 'DISCIPLINE';
@@ -346,8 +348,16 @@ function releaseDateOf(status: UnitStatus, c: DrawingCounts): Date | null {
   return status === 'COMPLETE' && c.releasedNoDate === 0 ? c.lastRelease : null;
 }
 
-/** A project and every project below it. */
-export async function projectScope(projectId?: string | null) {
+/** A project and every project below it — within the person's projects when a scope is given. */
+export async function projectScope(projectId?: string | null, scope?: string[] | null) {
+  const r = await projectScopeAll(projectId);
+  if (!scope) return r;
+  const keep = new Set(scope);
+  const all = r.all.filter((p) => keep.has(p.id));
+  return { all, ids: (r.ids ?? r.all.map((p) => p.id)).filter((id) => keep.has(id)) };
+}
+
+async function projectScopeAll(projectId?: string | null) {
   // Archived towers / products (and what is below them) are left out.
   const every = await db.select().from(projects);
   const archived = new Set(every.filter((p) => p.archivedAt).map((p) => p.id));
@@ -382,7 +392,7 @@ export async function projectScope(projectId?: string | null) {
  * and listed.
  */
 export async function loadDfs(f: DfsFilters = {}) {
-  const { all: allProjects, ids } = await projectScope(f.projectId);
+  const { all: allProjects, ids } = await projectScope(f.projectId, f.scopeProjectIds);
   const groups = await disciplineGroups();
   const drawingFilter = hasDrawingFilter(f);
   const live = and(isNull(drawings.archivedAt), sql`not exists (select 1 from ${packages} ap where ap.id = ${drawings.packageId} and ap.archived_at is not null)`);
@@ -1044,7 +1054,7 @@ function summaryBlock(projectId: string | null, name: string, depth: number, pkg
 
 /** DFS Summary — package status and billing per project (and its towers / products), then per discipline. */
 export async function dfsSummary(f: DfsFilters = {}): Promise<DfsSummary> {
-  const d = await loadDfs({ projectId: f.projectId, nodeId: f.nodeId });
+  const d = await loadDfs({ projectId: f.projectId, nodeId: f.nodeId, scopeProjectIds: f.scopeProjectIds });
   // As on the Project Drawing Status screen: a package with no drawings counts nowhere.
   const pkgs = d.packages.filter((p) => p.visible && (p.drawingsAll > 0 || !p.packageId));
   const inPkgs = new Set(pkgs.map((p) => p.key));
@@ -1311,15 +1321,17 @@ export function parseDfsFilters(sp: URLSearchParams | Record<string, string | st
   return f;
 }
 
-/** Every Responsible Person named on a package or drawing (for the filter). */
-export async function responsibleNames(): Promise<string[]> {
+/** Every Responsible Person named on a package or drawing (for the filter) — of the person's projects when scoped. */
+export async function responsibleNames(scope?: string[] | null): Promise<string[]> {
+  if (scope && scope.length === 0) return [];
+  const inScope = (col: string) => (scope ? sql` and ${sql.raw(col)} in (${sql.join(scope.map((x) => sql`${x}`), sql`, `)})` : sql``);
   const rows = await db.execute(sql`
     select distinct name from (
       select coalesce(u.name, p.responsible_text) as name from packages p left join users u on u.id = p.responsible_user_id
-        where p.archived_at is null and (p.responsible_user_id is not null or p.responsible_text is not null)
+        where p.archived_at is null and (p.responsible_user_id is not null or p.responsible_text is not null)${inScope('p.project_id')}
       union
       select coalesce(u.name, d.responsible_text) from drawings d left join users u on u.id = d.responsible_user_id
-        where d.archived_at is null and (d.responsible_user_id is not null or d.responsible_text is not null)
+        where d.archived_at is null and (d.responsible_user_id is not null or d.responsible_text is not null)${inScope('d.project_id')}
     ) x where name is not null order by name`);
   return (rows.rows as { name: string }[]).map((r) => r.name);
 }

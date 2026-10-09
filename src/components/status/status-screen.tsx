@@ -20,6 +20,9 @@ import { formatCrore } from '@/lib/format';
 import { DFS_LABEL, STATUS_LABEL } from '@/lib/labels';
 import { buildDfsModel, forRole, modelBilling, modelTotals, parseDfsFilters, responsibleNames, rowsOf } from '@/lib/services/dfs';
 import { drawingReference, projectOptions } from '@/lib/services/drawing-register';
+import { can, projectsFor } from '@/lib/members/policy';
+import { Note } from '@/components/ui';
+import { RememberProject } from '@/components/status/remember-project';
 
 /** The filter part of the address, for the table's own requests and exports. */
 export function filterQuery(sp: Record<string, string>) {
@@ -29,13 +32,30 @@ export function filterQuery(sp: Record<string, string>) {
 }
 
 export async function StatusScreen({ sp, user, mode, tabs }: { sp: Record<string, string>; user: SessionUser; mode: 'status' | 'billing'; tabs?: ReactNode }) {
-  const billing = userCan(user, 'billing.read');
-  const admin = user.loginRole !== 'VIEWER';
-  const editing = admin && user.editMode;
+  const p = user.principal;
+  // Billing columns when Billing is on for at least one of the person's projects …
+  const billing = userCan(user, 'billing.read') && can(p, 'billing');
+  const admin = user.loginRole !== 'VIEWER' && (!user.member || can(p, 'edit') || can(p, 'importExport') || can(p, 'billing'));
+  const editing = user.loginRole !== 'VIEWER' && user.editMode && can(p, 'edit');
+  // Only the person's projects (the Billing view: the projects where Billing is on).
+  const scopeSet = projectsFor(p, mode === 'billing' ? 'billing' : 'status');
+  const scope = scopeSet ? [...scopeSet] : null;
+  if (sp.projectId && scope && !scope.includes(sp.projectId)) return (
+      <Note tone="warn">
+        This project is not part of your access.{' '}
+        <Link className="link" href="?projectId=">
+          Show all my projects
+        </Link>
+      </Note>
+    );
   // "Show empty rows" belongs to Edit Mode only.
   const query = filterQuery(editing ? sp : { ...sp, showEmpty: '' });
   const f = parseDfsFilters(editing ? sp : { ...sp, showEmpty: undefined });
-  const [ref, names, model, options] = await Promise.all([drawingReference(f.projectId), responsibleNames(), buildDfsModel(f), projectOptions({ drawingsOnly: true })]);
+  f.scopeProjectIds = scope;
+  const [ref, names, model, options] = await Promise.all([drawingReference(f.projectId), responsibleNames(scope), buildDfsModel(f), projectOptions({ drawingsOnly: true, scope })]);
+  // … and on each row only where Billing is on for that row's project.
+  const rowBilling = (projectId: string | null) => billing && can(p, 'billing', projectId ?? undefined);
+  const billingAll = billing && (!projectsFor(p, 'billing') || (scope ?? []).every((id) => can(p, 'billing', id)));
   const projectOpts = options.map((p) => ({ value: p.value, label: p.label }));
   // Only discipline groups that hold drawings are offered.
   const groupsWithDrawings = new Set(model.units.filter((u) => u.all.drawings > 0).map((u) => u.group));
@@ -59,7 +79,7 @@ export async function StatusScreen({ sp, user, mode, tabs }: { sp: Record<string
     { key: 'responsible', label: DFS_LABEL.colResponsible, type: 'select', options: names.map((n) => ({ value: n, label: n })), width: '10rem' },
   ];
   const title = mode === 'billing' ? DFS_LABEL.billingTitle : DFS_LABEL.title;
-  const totals = { ...modelTotals(model), billing: billing ? modelBilling(model) : null };
+  const totals = { ...modelTotals(model), billing: billingAll ? modelBilling(model) : null };
   const money = (v: number) => formatCrore(v, { symbol: false });
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -72,7 +92,7 @@ export async function StatusScreen({ sp, user, mode, tabs }: { sp: Record<string
             {DFS_LABEL.editingEnabled}
           </span>
         )}
-        {user.loginRole === 'SUPER_ADMIN' && (
+        {can(p, 'planning') && !projectsFor(p, 'planning') && (
           <Link href="/drawing-control" className="btn btn-sm">
             {DFS_LABEL.openDrawingControl}
           </Link>
@@ -85,12 +105,12 @@ export async function StatusScreen({ sp, user, mode, tabs }: { sp: Record<string
         {/* Keyed by the filters so a new selection starts from a fresh table. */}
         <StatusTree
           key={`${query}|${mode}|${user.editMode}`}
-          initialRows={rowsOf(model, null).map((r) => forRole(r, billing))}
+          initialRows={rowsOf(model, null).map((r) => forRole(r, rowBilling(r.projectId)))}
           totals={totals}
           query={query}
           billing={billing}
           billingView={mode === 'billing'}
-          canExport={admin}
+          canExport={user.loginRole !== 'VIEWER' && can(p, 'importExport')}
           editMode={editing}
           showEmpty={editing && Boolean(f.showEmpty)}
           storageKey={`pds.expand.${user.id}`}
@@ -98,7 +118,8 @@ export async function StatusScreen({ sp, user, mode, tabs }: { sp: Record<string
           canMarkNa={userCan(user, 'drawing.admin')}
         />
       </div>
-      {mode === 'billing' && billing && (
+      <RememberProject storageKey={`pds.project.${user.id}`} current={sp.projectId ?? ''} hasOtherFilters={Object.keys(sp).some((k) => k !== 'projectId' && sp[k])} />
+      {mode === 'billing' && billingAll && (
         <section className="card mt-2 max-h-[38vh] overflow-auto" aria-labelledby="billing-review" data-billing-review="">
           <div className="flex flex-wrap items-baseline gap-2 border-b border-line px-3 py-2">
             <h2 id="billing-review" className="text-[13px] font-semibold text-ink">

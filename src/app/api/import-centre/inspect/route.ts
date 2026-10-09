@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { fail, ok, requirePermission } from '@/lib/api';
+import { fail, ok, requirePermission, requireProject } from '@/lib/api';
 import { CENTRE_FILE_TYPES, inspectWorkbook, savedMapping, uploadPath } from '@/lib/import/centre';
 
 export const dynamic = 'force-dynamic';
@@ -9,8 +9,9 @@ const schema = z.object({ uploadId: z.string().min(1), fileType: z.enum(CENTRE_F
 /** The column mapping for a chosen file type and project (the remembered one when there is one). */
 export async function POST(req: Request) {
   try {
-    await requirePermission(req, 'import.centre');
+    const ctx = await requirePermission(req, 'import.centre');
     const input = schema.parse(await req.json());
+    if (input.projectId) await requireProject(ctx, 'importExport', input.projectId);
     const up = uploadPath(input.uploadId);
     const saved = await savedMapping(input.projectId, input.fileType);
     // A Design Fee sheet chosen on the screen wins over the one remembered.

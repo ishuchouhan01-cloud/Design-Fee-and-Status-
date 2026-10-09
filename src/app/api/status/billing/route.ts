@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { fail, ok } from '@/lib/api';
+import { fail, ok, requireEntity, requireProject } from '@/lib/api';
 import { setBilling } from '@/lib/services/status-edit';
 import { requireEdit } from '@/lib/status-api';
 
@@ -12,7 +12,11 @@ const schema = z.object({ packageId: z.string().min(1), group: z.string().min(1)
 export async function PATCH(req: Request) {
   try {
     const ctx = await requireEdit(req, 'billing.write');
-    return ok(await setBilling(schema.parse(await req.json()), ctx.actor));
+    const b = schema.parse(await req.json());
+    // Edit and Billing on the package's project.
+    const projectId = await requireEntity(ctx, 'edit', 'PACKAGE', b.packageId);
+    await requireProject(ctx, 'billing', projectId);
+    return ok(await setBilling(b, ctx.actor));
   } catch (e) {
     return fail(e);
   }

@@ -20,8 +20,7 @@ import { queryGoals } from '@/lib/services/queries';
 import { fiscalYears, listDisciplines, listDesignLeads, listProjects } from '@/lib/services/reference';
 import { pct } from '@/lib/metrics';
 import { PRIORITIES, SCHEDULE_STATUSES, SCHEDULE_STATUS_LABEL } from '@/lib/domain';
-import { getCurrentUser } from '@/lib/auth';
-import { can } from '@/lib/rbac';
+import { getCurrentUser, userCan } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { PRIORITY_LABEL, projectLabel, quarterLabel, yearLabel } from '@/lib/labels';
 
@@ -73,7 +72,7 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
         <Kpi label="Planned billing (page, ₹ Cr)" value={plannedValue.toFixed(1)} />
       </div>
 
-      {can(user.role, 'goal.write') && (
+      {userCan(user, 'goal.write') && (
         <div className="mb-3">
           <GoalCreateForm
             projects={projects.map((p) => ({ id: p.id, name: projectLabel(p) }))}

@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import { ZodError } from 'zod';
-import { apiAllowed } from './access';
 import { getCurrentUser, actorOf, userCan, UnauthenticatedError, type SessionUser } from './auth';
+import { routeAllowed } from './members/gate';
+import { can, projectsFor, type Action } from './members/policy';
+import { projectOf, type EntityKind } from './members/principal';
 import { ForbiddenError, type Permission } from './rbac';
 
 export interface ApiContext {
@@ -16,12 +18,45 @@ export class RouteForbiddenError extends Error {
 
 export async function context(req: Request): Promise<ApiContext> {
   const user = await getCurrentUser(req.headers);
-  // The sign-in role's own gate (the middleware applies the same rule first).
+  // The one rule (lib/members/policy can), as the middleware applies it first.
   const url = new URL(req.url);
-  if (!apiAllowed(user.loginRole, req.method, url.pathname, url.search)) {
-    throw new RouteForbiddenError('Your sign-in does not include this. Switch User to sign in with another role.');
+  if (!routeAllowed(user, 'api', req.method, url.pathname, url.search)) {
+    throw new RouteForbiddenError(user.member ? 'Your access does not include this. Ask your Project Admin.' : 'Your sign-in does not include this. Switch User to sign in with another role.');
   }
   return { user, actor: actorOf(user) };
+}
+
+/**
+ * The project of the row a request touches must allow the action: a member
+ * of project A gets 403 on anything that belongs to project B, even by id.
+ * A row that does not exist is 404.
+ */
+export async function requireProject(ctx: ApiContext, action: Action, projectId: string | null | undefined): Promise<void> {
+  if (!projectId) {
+    if (ctx.user.principal.accountAdmin || ctx.user.principal.kind === 'legacy') return;
+    throw Object.assign(new Error('This record was not found.'), { status: 404 });
+  }
+  if (!can(ctx.user.principal, action, projectId)) throw new RouteForbiddenError('This belongs to a project you do not have access to.');
+}
+
+/** requireProject for the project of a row given by id (drawing, package, fee line …). */
+export async function requireEntity(ctx: ApiContext, action: Action, kind: EntityKind, id: string | null | undefined): Promise<string | null> {
+  const projectId = await projectOf(kind, id);
+  if (!projectId) throw Object.assign(new Error('This record was not found.'), { status: 404 });
+  await requireProject(ctx, action, projectId);
+  return projectId;
+}
+
+/** The projects the person may see for an action (null = all), for the services that list data. */
+export function scopeOf(ctx: ApiContext, action: Action = 'status'): string[] | null {
+  const s = projectsFor(ctx.user.principal, action);
+  return s ? [...s] : null;
+}
+
+/** Billing fields stay only on rows of projects where Billing is on. */
+export function billingFor(ctx: ApiContext): (projectId: string | null | undefined) => boolean {
+  if (!userCan(ctx.user, 'billing.read')) return () => false;
+  return (projectId) => can(ctx.user.principal, 'billing', projectId ?? undefined);
 }
 
 export async function requirePermission(req: Request, permission: Permission): Promise<ApiContext> {
@@ -59,4 +94,17 @@ export function fail(err: unknown) {
 
 export function searchParams(req: Request): URLSearchParams {
   return new URL(req.url).searchParams;
+}
+
+/** Billing on for every project in view (the header totals carry billing only then). */
+export function billingEverywhere(ctx: ApiContext, scope: string[] | null): boolean {
+  if (!userCan(ctx.user, 'billing.read')) return false;
+  const b = projectsFor(ctx.user.principal, 'billing');
+  if (!b) return true;
+  return !!scope && scope.every((id) => b.has(id));
+}
+
+/** A project asked for in the address must be one of the person's. */
+export function requireInScope(projectId: string | null | undefined, scope: string[] | null): void {
+  if (projectId && scope && !scope.includes(projectId)) throw new RouteForbiddenError('This belongs to a project you do not have access to.');
 }

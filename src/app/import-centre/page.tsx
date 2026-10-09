@@ -7,18 +7,21 @@ import { ImportCentre } from '@/components/import-centre';
 import { PageHeader } from '@/components/ui';
 import { db } from '@/db';
 import { projects } from '@/db/schema';
-import { getCurrentUser } from '@/lib/auth';
+import { getCurrentUser, userCan } from '@/lib/auth';
+import { projectsFor } from '@/lib/members/policy';
 import { importHistory } from '@/lib/import/centre';
 import { IMPORT_FILE_TYPE_LABEL, NAV_LABEL, projectLabel } from '@/lib/labels';
-import { can } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
 export default async function ImportCentrePage() {
   const user = await getCurrentUser((await headers()) as unknown as Headers);
-  if (!can(user.role, 'import.centre')) notFound();
-  const [all, runs] = await Promise.all([db.select().from(projects), importHistory()]);
+  if (!userCan(user, 'import.centre')) notFound();
+  // Only the person's projects with Import / Export.
+  const scope = projectsFor(user.principal, 'importExport');
+  const [all, runs] = await Promise.all([db.select().from(projects), importHistory(50, scope ? [...scope] : null)]);
   const options = all
+    .filter((p) => !scope || scope.has(p.id))
     .map((p) => ({ id: p.id, name: projectLabel(p), parentId: p.parentProjectId }))
     .sort((a, b) => a.name.localeCompare(b.name));
   return (

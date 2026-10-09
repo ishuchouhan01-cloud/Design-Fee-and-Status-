@@ -12,13 +12,20 @@
  * into `login_accounts`; sign-in compares with the hash. A session is a random
  * token in an httpOnly, SameSite cookie with an expiry; only its SHA-256 is
  * stored. Failed passwords are rate-limited per role and address.
+ *
+ * Personal sign-in (email + password, lib/members/auth) uses the same
+ * sessions: a MEMBER session carries member_id. Every session ends after
+ * 60 minutes without a request (and at its 12 h expiry); Edit Mode goes off
+ * after 30 minutes without one. With LEGACY_ROLE_LOGINS off the shared role
+ * sign-ins are refused and their sessions end (the emergency sign-in stays).
  */
 import { createHash, randomBytes } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { and, count, eq, gt, isNull, like } from 'drizzle-orm';
 import { db } from '@/db';
-import { loginAccounts, loginAttempts, loginSessions, users } from '@/db/schema';
-import { LOGIN_ROLE_LABEL, readCookie, signCookie, type LoginRole } from './access';
+import { loginAccounts, loginAttempts, loginSessions, members, users } from '@/db/schema';
+import { LOGIN_ROLE_LABEL, readCookie, signCookie, type LoginRole, type SessionRole } from './access';
+import { legacyLoginsOn } from './members/gate';
 import { newId } from './ids';
 import type { Role } from './domain';
 
@@ -36,6 +43,10 @@ const ENV_PASSWORD: Record<string, string> = { ADMIN: 'ADMIN_PASSWORD', SUPER_AD
 
 /** Per role and address, and per role from anywhere (an address can be spoofed). */
 export const RATE_LIMIT = { attempts: 5, roleAttempts: 20, windowMinutes: 15 };
+
+/** A session ends after this long without a request; Edit Mode goes off sooner. */
+export const IDLE_MINUTES = 60;
+export const EDIT_MODE_IDLE_MINUTES = 30;
 
 export class LoginError extends Error {
   status: number;
@@ -120,11 +131,12 @@ async function recentFailures(key: string, anyAddress = false) {
 export interface SignedIn {
   cookie: string;
   expires: Date;
-  role: LoginRole;
+  role: SessionRole;
 }
 
 /** Check the password (Admin, Super Admin; Viewer when one is set) and open a session. */
 export async function signIn(role: LoginRole, password: string | undefined, ip = 'unknown'): Promise<SignedIn> {
+  if (!legacyLoginsOn()) throw new LoginError('Sign in with your email and password.', 403);
   const key = `${role}|${ip}`;
   if (PASSWORD_ROLES.includes(role) || (OPTIONAL_PASSWORD_ROLES.includes(role) && (await viewerNeedsPassword()))) {
     if ((await recentFailures(key)) >= RATE_LIMIT.attempts || (await recentFailures(role, true)) >= RATE_LIMIT.roleAttempts) {
@@ -145,10 +157,14 @@ export async function signIn(role: LoginRole, password: string | undefined, ip =
 
 export interface ActiveSession {
   id: string;
-  role: LoginRole;
+  role: SessionRole;
   editMode: boolean;
   expiresAt: Date;
+  /** The emergency (break-glass) Account Admin sign-in. */
+  emergency: boolean;
   user: { id: string; name: string; email: string; role: Role };
+  /** A personal sign-in; null for the shared role sign-ins. */
+  member: { id: string; name: string; email: string; accountAdmin: boolean } | null;
 }
 
 /** The session a cookie belongs to, when it is valid, unexpired and not signed out. */
@@ -156,18 +172,36 @@ export async function sessionFor(cookie: string | null | undefined): Promise<Act
   const claims = await readCookie(cookie, sessionSecret());
   if (!claims) return null;
   const [row] = await db
-    .select({ s: loginSessions, u: users })
+    .select({ s: loginSessions, u: users, m: members })
     .from(loginSessions)
     .innerJoin(users, eq(loginSessions.userId, users.id))
+    .leftJoin(members, eq(loginSessions.memberId, members.id))
     .where(and(eq(loginSessions.tokenHash, sha256(claims.token)), isNull(loginSessions.revokedAt)))
     .limit(1);
-  if (!row || row.s.loginRole !== claims.role || row.s.expiresAt.getTime() <= Date.now() || !row.u.active) return null;
+  const now = Date.now();
+  if (!row || row.s.loginRole !== claims.role || row.s.expiresAt.getTime() <= now || !row.u.active) return null;
+  // A member who is not active (deactivated, or reset to invited) is signed out at once.
+  if (claims.role === 'MEMBER' && (!row.m || row.m.status !== 'active')) return null;
+  // The shared role sign-ins end when they are switched off (the emergency sign-in stays).
+  if (claims.role !== 'MEMBER' && !row.s.emergency && !legacyLoginsOn()) return null;
+  const idle = now - (row.s.lastSeenAt ?? row.s.createdAt).getTime();
+  if (idle > IDLE_MINUTES * 60_000) {
+    await db.update(loginSessions).set({ revokedAt: new Date(), editMode: false }).where(eq(loginSessions.id, row.s.id));
+    return null;
+  }
+  let editMode = row.s.editMode;
+  if (editMode && idle > EDIT_MODE_IDLE_MINUTES * 60_000) editMode = false;
+  if (idle > 60_000 || editMode !== row.s.editMode) {
+    await db.update(loginSessions).set({ lastSeenAt: new Date(), editMode }).where(eq(loginSessions.id, row.s.id));
+  }
   return {
     id: row.s.id,
     role: claims.role,
-    editMode: row.s.editMode,
+    editMode,
     expiresAt: row.s.expiresAt,
+    emergency: row.s.emergency,
     user: { id: row.u.id, name: row.u.name, email: row.u.email, role: row.u.role as Role },
+    member: row.m ? { id: row.m.id, name: row.m.name, email: row.m.email, accountAdmin: row.m.isAccountAdmin } : null,
   };
 }
 

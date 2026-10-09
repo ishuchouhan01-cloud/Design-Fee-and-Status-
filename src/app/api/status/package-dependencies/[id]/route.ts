@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { fail, ok } from '@/lib/api';
+import { fail, ok, requireEntity } from '@/lib/api';
 import { updatePackageDependency } from '@/lib/services/status-edit';
 import { requireEdit } from '@/lib/status-api';
 import { optionalDateString } from '@/lib/validation';
@@ -22,6 +22,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   try {
     const ctx = await requireEdit(req, 'drawing.write');
     const { id } = await params;
+    await requireEntity(ctx, 'edit', 'PACKAGE_DEPENDENCY', id);
     return ok(await updatePackageDependency(id, schema.parse(await req.json()), ctx.actor));
   } catch (e) {
     return fail(e);

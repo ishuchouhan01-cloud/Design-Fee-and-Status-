@@ -2,8 +2,7 @@ import Link from 'next/link';
 import { headers } from 'next/headers';
 import { ImportControls } from '@/components/fy26-import-controls';
 import { Card, Empty, Note, PageHeader, TableWrap } from '@/components/ui';
-import { getCurrentUser } from '@/lib/auth';
-import { can } from '@/lib/rbac';
+import { getCurrentUser, userCan } from '@/lib/auth';
 import { importIssueSummary, listImportBatches, listImportIssues } from '@/lib/services/fy26';
 
 export const dynamic = 'force-dynamic';
@@ -58,7 +57,7 @@ export default async function Fy26ImportPage({ searchParams }: { searchParams: P
         ]}
       />
 
-      {can(user.role, 'fy26.import') ? (
+      {userCan(user, 'fy26.import') ? (
         <Card title="Run the import" subtitle="Admin only">
           <ImportControls />
         </Card>

@@ -23,6 +23,7 @@ export const NAV_LABEL = {
   updateCentre: 'Update Centre',
   schedule: 'Schedule / Reschedule',
   audit: 'Audit',
+  members: 'Members',
   settings: 'Settings',
 } as const;
 
@@ -173,6 +174,7 @@ export const DFS_LABEL = {
   fullScreen: 'Full Screen',
   exitFullScreen: 'Exit Full Screen',
   switchUser: 'Switch User',
+  signOut: 'Sign out',
   editMode: 'Edit Mode',
   editingEnabled: 'Editing enabled',
   colDrawingName: 'Drawing Name',

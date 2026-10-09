@@ -97,6 +97,19 @@ export const AUDIT_ACTIONS = [
   'UNDO_IMPORT',
   // Project Drawing Status (Edit Mode)
   'ARCHIVE',
+  // Members (personal sign-in)
+  'ADD_MEMBER',
+  'UPDATE_MEMBER',
+  'SET_ACCESS',
+  'REMOVE_MEMBER',
+  'DEACTIVATE_MEMBER',
+  'REACTIVATE_MEMBER',
+  'RESET_PASSWORD',
+  'INVITE_CREATED',
+  'INVITE_USED',
+  'END_SESSION',
+  'EMERGENCY_SIGN_IN',
+  'MERGE',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 

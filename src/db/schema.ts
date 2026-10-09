@@ -1172,7 +1172,7 @@ export const loginSessions = pgTable(
   {
     id: text('id').primaryKey(),
     tokenHash: text('token_hash').notNull(),
-    loginRole: text('login_role').notNull(), // VIEWER | ADMIN | SUPER_ADMIN
+    loginRole: text('login_role').notNull(), // VIEWER | ADMIN | SUPER_ADMIN | MEMBER
     userId: text('user_id')
       .notNull()
       .references(() => users.id),
@@ -1182,8 +1182,12 @@ export const loginSessions = pgTable(
     expiresAt: ts('expires_at').notNull(),
     lastSeenAt: ts('last_seen_at'),
     revokedAt: ts('revoked_at'),
+    /** A personal sign-in (members); null for the shared role sign-ins. */
+    memberId: text('member_id').references((): AnyPgColumn => members.id),
+    /** The emergency (break-glass) Account Admin sign-in. */
+    emergency: boolean('emergency').notNull().default(false),
   },
-  (t) => [uniqueIndex('login_sessions_token_uq').on(t.tokenHash), index('login_sessions_user_ix').on(t.userId)],
+  (t) => [uniqueIndex('login_sessions_token_uq').on(t.tokenHash), index('login_sessions_user_ix').on(t.userId), index('login_sessions_member_ix').on(t.memberId)],
 );
 
 /** Password attempts, for rate limiting (per role and address). */
@@ -1194,8 +1198,99 @@ export const loginAttempts = pgTable(
     key: text('key').notNull(),
     success: boolean('success').notNull(),
     at: now('at'),
+    /** Email sign-in: the email tried (rate limit per email as well as per address). */
+    email: text('email'),
   },
-  (t) => [index('login_attempts_key_ix').on(t.key, t.at)],
+  (t) => [index('login_attempts_key_ix').on(t.key, t.at), index('login_attempts_email_ix').on(t.email, t.at)],
+);
+
+// ---------------------------------------------------------------------------
+// Members — personal sign-in with an access level per project (migration 0011)
+// ---------------------------------------------------------------------------
+
+/** Companies (Forma's Companies list). The name is unique, ignoring case (functional index in the migration). */
+export const companies = pgTable('companies', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  trade: text('trade'),
+  createdAt: now(),
+  updatedAt: ts('updated_at'),
+});
+
+/** Job roles (Forma's Roles list). The name is unique, ignoring case. */
+export const jobRoles = pgTable('job_roles', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  createdAt: now(),
+  updatedAt: ts('updated_at'),
+});
+
+/** A person who signs in with their own email. */
+export const members = pgTable(
+  'members',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    /** Lower-cased (a CHECK in the migration), unique. */
+    email: text('email').notNull(),
+    phone: text('phone'),
+    companyId: text('company_id').references(() => companies.id, { onDelete: 'set null' }),
+    jobRoleId: text('job_role_id').references(() => jobRoles.id, { onDelete: 'set null' }),
+    /** invited | active | deactivated */
+    status: text('status').notNull().default('invited'),
+    /** bcrypt (cost 12); null until the member sets a password from their invite link. */
+    passwordHash: text('password_hash'),
+    isAccountAdmin: boolean('is_account_admin').notNull().default(false),
+    createdAt: now(),
+    createdBy: text('created_by'),
+    lastSignInAt: ts('last_sign_in_at'),
+    deactivatedAt: ts('deactivated_at'),
+    /** The user record the member acts as, so the audit trail and existing references keep working. */
+    userId: text('user_id').references(() => users.id),
+    updatedAt: ts('updated_at'),
+  },
+  (t) => [uniqueIndex('members_email_uq').on(t.email), index('members_user_ix').on(t.userId)],
+);
+
+/** A member's access to one project: the level and the module switches. */
+export const projectMembers = pgTable(
+  'project_members',
+  {
+    id: text('id').primaryKey(),
+    memberId: text('member_id')
+      .notNull()
+      .references(() => members.id, { onDelete: 'cascade' }),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    /** project_admin | member */
+    accessLevel: text('access_level').notNull().default('member'),
+    swBilling: boolean('sw_billing').notNull().default(false),
+    swEdit: boolean('sw_edit').notNull().default(false),
+    swImportExport: boolean('sw_import_export').notNull().default(false),
+    swPlanning: boolean('sw_planning').notNull().default(false),
+    addedAt: now('added_at'),
+    addedBy: text('added_by'),
+    updatedAt: ts('updated_at'),
+  },
+  (t) => [uniqueIndex('project_members_uq').on(t.memberId, t.projectId), index('project_members_project_ix').on(t.projectId)],
+);
+
+/** One-time invite links: only the SHA-256 of the token is stored; 72 h; single use. */
+export const memberInvites = pgTable(
+  'member_invites',
+  {
+    id: text('id').primaryKey(),
+    memberId: text('member_id')
+      .notNull()
+      .references(() => members.id, { onDelete: 'cascade' }),
+    tokenHash: text('token_hash').notNull(),
+    expiresAt: ts('expires_at').notNull(),
+    usedAt: ts('used_at'),
+    createdAt: now(),
+    createdBy: text('created_by'),
+  },
+  (t) => [uniqueIndex('member_invites_token_uq').on(t.tokenHash), index('member_invites_member_ix').on(t.memberId)],
 );
 
 /** Dependencies under a package (the drawing dependencies' shape, one level up). */

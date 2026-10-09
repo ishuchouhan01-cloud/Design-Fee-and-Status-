@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { fail, ok, requirePermission } from '@/lib/api';
+import { fail, ok, requireEntity, requirePermission } from '@/lib/api';
 import { setUnitApplicability } from '@/lib/services/dfs-admin';
 
 export const dynamic = 'force-dynamic';
@@ -18,6 +18,7 @@ export async function POST(req: Request) {
   try {
     const ctx = await requirePermission(req, 'drawing.admin');
     const input = schema.parse(await req.json());
+    await requireEntity(ctx, 'edit', 'PACKAGE', input.packageId);
     return ok(await setUnitApplicability(input, ctx.actor));
   } catch (e) {
     return fail(e);

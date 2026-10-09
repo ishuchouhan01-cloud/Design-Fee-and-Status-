@@ -11,8 +11,10 @@ import { ROLE_DESCRIPTION, ROLE_PERMISSIONS } from '@/lib/rbac';
 import { ROLES } from '@/lib/domain';
 import { getCurrentUser } from '@/lib/auth';
 import { headers } from 'next/headers';
-import { LOGIN_ROLE_LABEL } from '@/lib/access';
+import { SESSION_ROLE_LABEL as LOGIN_ROLE_LABEL } from '@/lib/access';
 import { SwitchUserButton } from '@/components/switch-user-button';
+import Link from 'next/link';
+import { can } from '@/lib/members/policy';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,13 +22,23 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const sp = await searchParams;
   const signedIn = await getCurrentUser((await headers()) as unknown as Headers);
   const switchCard = (
-    <Card title="Signed in" subtitle={`As ${LOGIN_ROLE_LABEL[signedIn.loginRole]}`}>
-      <p className="mb-3 text-[12.5px] text-ink-soft">Switch User ends this session (Edit Mode goes off) and returns to the sign-in screen.</p>
-      <SwitchUserButton />
+    <Card
+      title="Signed in"
+      subtitle={signedIn.member ? `${signedIn.member.name} · ${signedIn.member.email}${signedIn.principal.accountAdmin ? ' · Account Admin' : ''}` : `As ${LOGIN_ROLE_LABEL[signedIn.loginRole]}`}
+    >
+      <p className="mb-3 text-[12.5px] text-ink-soft">{signedIn.member ? 'Sign out' : 'Switch User'} ends this session (Edit Mode goes off) and returns to the sign-in screen.</p>
+      <div className="flex flex-wrap gap-2">
+        <SwitchUserButton />
+        {can(signedIn.principal, 'members') && (
+          <Link href="/settings/members" className="btn btn-sm">
+            Members
+          </Link>
+        )}
+      </div>
     </Card>
   );
-  // Viewer and Admin: Switch User only.
-  if (signedIn.loginRole !== 'SUPER_ADMIN') {
+  // Everyone but the Account Admin: who is signed in, Sign out (and Members for a Project Admin).
+  if (!signedIn.principal.accountAdmin) {
     return (
       <div className="mx-auto max-w-xl">
         <PageHeader title="Settings" crumbs={[{ label: 'Project Drawing Status', href: '/drawings' }, { label: 'Settings' }]} />

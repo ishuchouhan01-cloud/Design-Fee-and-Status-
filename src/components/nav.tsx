@@ -4,36 +4,11 @@ import clsx from 'clsx';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import type { LoginRole } from '@/lib/access';
-import { APP_TITLE, DFS_LABEL, NAV_LABEL } from '@/lib/labels';
+import { APP_TITLE, DFS_LABEL } from '@/lib/labels';
 import { confirmDiscard, setEditModeFlag } from '@/components/edit-state';
+import { NAV, type NavIcon } from '@/lib/nav-items';
 
-type Item = { href: string; label: string; icon: keyof typeof ICONS; roles: LoginRole[] };
 
-const ALL: LoginRole[] = ['VIEWER', 'ADMIN', 'SUPER_ADMIN'];
-const ADMINS: LoginRole[] = ['ADMIN', 'SUPER_ADMIN'];
-const SUPER: LoginRole[] = ['SUPER_ADMIN'];
-
-/** The menu, per sign-in role. */
-export const NAV: Item[] = [
-  { href: '/', label: NAV_LABEL.dashboard, icon: 'home', roles: SUPER },
-  { href: '/projects', label: NAV_LABEL.projects, icon: 'folder', roles: SUPER },
-  { href: '/goals', label: NAV_LABEL.goals, icon: 'target', roles: SUPER },
-  { href: '/deliverables', label: NAV_LABEL.deliverables, icon: 'stack', roles: SUPER },
-  { href: '/fy26', label: NAV_LABEL.fy26, icon: 'calendar', roles: SUPER },
-  { href: '/drawings', label: NAV_LABEL.dfs, icon: 'tree', roles: ALL },
-  { href: '/billing', label: NAV_LABEL.billing, icon: 'rupee', roles: ADMINS },
-  { href: '/drawing-control', label: NAV_LABEL.drawingControl, icon: 'pencil', roles: SUPER },
-  { href: '/import-centre', label: NAV_LABEL.importCentre, icon: 'upload', roles: ADMINS },
-  { href: '/update-centre', label: NAV_LABEL.updateCentre, icon: 'refresh', roles: SUPER },
-  { href: '/schedule', label: NAV_LABEL.schedule, icon: 'clock', roles: SUPER },
-  { href: '/audit', label: NAV_LABEL.audit, icon: 'list', roles: SUPER },
-  { href: '/settings', label: NAV_LABEL.settings, icon: 'gear', roles: ALL },
-];
-
-export function navFor(role: LoginRole) {
-  return NAV.filter((i) => i.roles.includes(role));
-}
 
 const ICONS = {
   home: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z',
@@ -48,8 +23,9 @@ const ICONS = {
   refresh: 'M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5',
   clock: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm0 4v5l3 2',
   list: 'M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01',
+  users: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21v-1a6 6 0 0 1 6-6h2a6 6 0 0 1 6 6v1M16 4a4 4 0 0 1 0 7M18 14a5 5 0 0 1 4 5v2',
   gear: 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM4 12h2m12 0h2M12 4v2m0 12v2M6.3 6.3l1.4 1.4m8.6 8.6 1.4 1.4m0-11.4-1.4 1.4m-8.6 8.6-1.4 1.4',
-} as const;
+} as const satisfies Record<NavIcon, string>;
 
 function Icon({ name }: { name: keyof typeof ICONS }) {
   return (
@@ -108,7 +84,28 @@ export function EditModeSwitch({ on, compact }: { on: boolean; compact?: boolean
   );
 }
 
-export function SideNav({ role, roleLabel, editMode }: { role: LoginRole; roleLabel: string; editMode: boolean }) {
+/** "Ana Rao" → AR (the avatar in the menu). */
+function initialsOf(name: string) {
+  const p = name.trim().split(/\s+/).filter(Boolean);
+  return ((p[0]?.[0] ?? '') + (p.length > 1 ? p[p.length - 1][0] : (p[0]?.[1] ?? ''))).toUpperCase();
+}
+
+export function SideNav({
+  hrefs,
+  name,
+  roleLabel,
+  editMode,
+  canEdit,
+}: {
+  /** The menu entries this person may open. */
+  hrefs: string[];
+  /** The person (a member's name) or the shared sign-in's label. */
+  name: string;
+  roleLabel: string;
+  editMode: boolean;
+  /** Edit Mode is offered when Edit is on for at least one of their projects. */
+  canEdit: boolean;
+}) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -130,7 +127,7 @@ export function SideNav({ role, roleLabel, editMode }: { role: LoginRole; roleLa
       return !c;
     });
   };
-  const items = navFor(role);
+  const items = NAV.filter((i) => hrefs.includes(i.href));
   return (
     <>
       <button
@@ -165,7 +162,9 @@ export function SideNav({ role, roleLabel, editMode }: { role: LoginRole; roleLa
         </div>
         <nav className="flex-1 space-y-0.5 overflow-y-auto p-2" aria-label="Main">
           {items.map((item) => {
-            const active = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
+            // The longest matching entry only (Settings is not lit on Settings → Members).
+            const best = NAV.filter((i) => (i.href === '/' ? pathname === '/' : pathname === i.href || pathname.startsWith(`${i.href}/`))).sort((a, b) => b.href.length - a.href.length)[0];
+            const active = best?.href === item.href;
             return (
               <Link
                 key={item.href}
@@ -182,16 +181,28 @@ export function SideNav({ role, roleLabel, editMode }: { role: LoginRole; roleLa
               </Link>
             );
           })}
-          {role !== 'VIEWER' && (
+          {canEdit && (
             <div className="mt-2 border-t border-white/10 pt-2">
               <EditModeSwitch on={editMode} compact={collapsed} />
             </div>
           )}
         </nav>
         <div className="border-t border-white/10 px-3 py-3">
-          {!collapsed && <p className="text-[12px] font-medium text-white">{roleLabel}</p>}
-          <button type="button" className="mt-1 text-[11.5px] text-slate-300 underline-offset-2 hover:text-white hover:underline" onClick={() => void switchUser()}>
-            {DFS_LABEL.switchUser}
+          <div className={clsx('flex items-center gap-2', collapsed && 'lg:justify-center')}>
+            <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/15 text-[11px] font-semibold text-white" aria-hidden="true" title={name}>
+              {initialsOf(name)}
+            </span>
+            {!collapsed && (
+              <span className="min-w-0">
+                <span className="block truncate text-[12px] font-medium text-white" data-person="">
+                  {name}
+                </span>
+                <span className="block truncate text-[11px] text-slate-400">{roleLabel}</span>
+              </span>
+            )}
+          </div>
+          <button type="button" className="mt-1.5 text-[11.5px] text-slate-300 underline-offset-2 hover:text-white hover:underline" onClick={() => void switchUser()}>
+            {DFS_LABEL.signOut}
           </button>
         </div>
       </aside>

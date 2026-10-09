@@ -9,7 +9,7 @@ import { formatDate, formatDateTime } from '@/lib/format';
 import { updatedOnText } from '@/lib/updated-on';
 import { PACKAGE_FEE_LINE } from '@/lib/import/drawing-register/design-fee';
 import { EXCLUDED_NO_RELEASE } from './billing-rollup';
-import { buildDfsModel, modelBilling, type DfsFilters, type DfsModel, type DfsRow } from './dfs';
+import { buildDfsModel, forRole, modelBilling, type DfsFilters, type DfsModel, type DfsRow } from './dfs';
 
 type Line = Record<string, string | number>;
 
@@ -39,6 +39,8 @@ const money = (v: number | undefined) => (v == null ? '' : Math.round(v * 10000)
 
 function billingCols(r: DfsRow, on: boolean): Line {
   if (!on) return {};
+  // A row of a project where Billing is off for this person: the columns stay empty.
+  if (r.billing === undefined && r.billingFlags === undefined) return { [`${DFS_LABEL.colTotal} (₹ Cr)`]: '', [`${DFS_LABEL.colBilled} (₹ Cr)`]: '', [`${DFS_LABEL.colUnbilled} (₹ Cr)`]: '', 'Billing note': '' };
   // A fee line with no released drawing is left out of billing: "—", as on the screen.
   const out = !r.billing && (r.billingFlags ?? []).includes(EXCLUDED_NO_RELEASE);
   return {
@@ -55,8 +57,22 @@ function billingCols(r: DfsRow, on: boolean): Line {
   };
 }
 
-export async function buildDfsExport(f: DfsFilters, format: 'xlsx' | 'csv', opts: { billing?: boolean } = {}) {
+export async function buildDfsExport(
+  f: DfsFilters,
+  format: 'xlsx' | 'csv',
+  opts: {
+    /** Billing columns at all. */
+    billing?: boolean;
+    /** Per row: Billing on for the row's project (default: every row). */
+    rowBilling?: (projectId: string | null | undefined) => boolean;
+    /** Billing on for every project in the export (the totals, reconciliation and review sheets). */
+    billingAll?: boolean;
+  } = {},
+) {
   const billing = !!opts.billing;
+  const rowBilling = opts.rowBilling ?? (() => true);
+  const billingAll = billing && (opts.billingAll ?? true);
+  const strip = (r: DfsRow): DfsRow => (rowBilling(r.projectId) ? r : forRole(r, false));
   const model = await buildDfsModel(f);
   const packagesOut: Line[] = [];
   const lines: Line[] = [];
@@ -72,7 +88,7 @@ export async function buildDfsExport(f: DfsFilters, format: 'xlsx' | 'csv', opts
         [DFS_LABEL.colReleaseDate]: date(r.releaseDate),
         [DFS_LABEL.colDrawingsReleased]: r.drawingsReleased,
         'Drawings Total': r.drawingsTotal,
-        ...billingCols(r, billing),
+        ...billingCols(strip(r), billing),
       });
       // One fee for the whole package: its own line, so the lines still add up to the totals.
       if (r.group === PACKAGE_FEE_LINE) {
@@ -87,7 +103,7 @@ export async function buildDfsExport(f: DfsFilters, format: 'xlsx' | 'csv', opts
           [DFS_LABEL.colReleaseDate]: date(r.releaseDate),
           [DFS_LABEL.colDrawingsReleased]: '',
           'Drawings Total': '',
-          ...billingCols(r, billing),
+          ...billingCols(strip(r), billing),
         });
       }
     }
@@ -105,7 +121,7 @@ export async function buildDfsExport(f: DfsFilters, format: 'xlsx' | 'csv', opts
         [DFS_LABEL.colReleaseDate]: date(r.releaseDate),
         [DFS_LABEL.colDrawingsReleased]: r.drawingsReleased,
         'Drawings Total': r.drawingsTotal,
-        ...billingCols(r, billing),
+        ...billingCols(strip(r), billing),
       });
       if (r.unitKey && r.drawingsTotal > 0) unitKeys.push({ key: r.unitKey, path: [...path, r] });
     }
@@ -147,10 +163,10 @@ export async function buildDfsExport(f: DfsFilters, format: 'xlsx' | 'csv', opts
     [APP_TITLE],
     ['Exported on', formatDateTime(new Date())],
     [],
-    [DFS_LABEL.colProject, DFS_LABEL.colPackagesComplete, 'Packages Total', DFS_LABEL.colDrawingsReleased, 'Drawings Total', ...(billing ? ['Total (₹ Cr)', 'Billed (₹ Cr)', 'Unbilled (₹ Cr)'] : [])],
-    ...totals.map((r) => [r.name, r.packagesComplete, r.packagesTotal, r.drawingsReleased, r.drawingsTotal, ...(billing ? [money(r.billing?.total), money(r.billing?.billed), money(r.billing?.unbilled)] : [])]),
-    ...(billing && all ? [['All projects', '', '', '', '', money(all.total), money(all.billed), money(all.unbilled)]] : []),
-    ...(billing
+    [DFS_LABEL.colProject, DFS_LABEL.colPackagesComplete, 'Packages Total', DFS_LABEL.colDrawingsReleased, 'Drawings Total', ...(billingAll ? ['Total (₹ Cr)', 'Billed (₹ Cr)', 'Unbilled (₹ Cr)'] : [])],
+    ...totals.map((r) => [r.name, r.packagesComplete, r.packagesTotal, r.drawingsReleased, r.drawingsTotal, ...(billingAll ? [money(r.billing?.total), money(r.billing?.billed), money(r.billing?.unbilled)] : [])]),
+    ...(billingAll && all ? [['All projects', '', '', '', '', money(all.total), money(all.billed), money(all.unbilled)]] : []),
+    ...(billingAll
       ? [
           [],
           ['Reconciliation (₹ Cr)', '', '', '', '', 'Total', 'Billed'],
@@ -165,7 +181,7 @@ export async function buildDfsExport(f: DfsFilters, format: 'xlsx' | 'csv', opts
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(packagesOut), 'Packages');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(lines), 'Packages by discipline');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(drawingsOut), 'Drawings');
-  if (billing) {
+  if (billingAll) {
     const review = model.review.map((x) => ({
       [DFS_LABEL.colProject]: x.project,
       [DFS_LABEL.colPackageCode]: x.packageCode,

@@ -16,12 +16,12 @@ import { DfsPeriodsView } from '@/components/dfs/dfs-views';
 import { DfsSummaryPanel } from '@/components/dfs/dfs-summary';
 import { FilterBar, type FilterDef } from '@/components/filter-bar';
 import { Kpi, Note, PageHeader } from '@/components/ui';
-import { getCurrentUser } from '@/lib/auth';
+import { getCurrentUser, userCan } from '@/lib/auth';
 import { formatNumber } from '@/lib/format';
 import { DFS_LABEL, NAV_LABEL, STATUS_LABEL } from '@/lib/labels';
-import { can } from '@/lib/rbac';
 import { dfsPeriods, dfsSummary, parseDfsFilters } from '@/lib/services/dfs';
 import { drawingKpis, drawingReference } from '@/lib/services/drawing-register';
+import { can, projectsFor } from '@/lib/members/policy';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,10 +35,18 @@ const VIEWS = [
 export default async function DfsPage({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const sp = await searchParams;
   const user = await getCurrentUser((await headers()) as unknown as Headers);
-  if (!can(user.role, 'drawing.read')) return <Note tone="warn">Your role does not include Project Drawing Status.</Note>;
-  const superAdmin = user.loginRole === 'SUPER_ADMIN';
-  // The DFS Summary, Year / Quarter and Drawing list tabs are Super Admin screens.
-  const view = !superAdmin ? 'tree' : sp.view === 'billing' ? 'summary' : (VIEWS.find((v) => v.key === sp.view)?.key ?? 'tree');
+  if (!userCan(user, 'drawing.read')) return <Note tone="warn">Your role does not include Project Drawing Status.</Note>;
+  // The DFS Summary and Year / Quarter tabs are planning screens with billing:
+  // Planning and Billing on for every project they cover. The Drawing list
+  // covers every project, so it needs Planning on all of them.
+  const p = user.principal;
+  const planSet = projectsFor(p, 'planning');
+  const scope = planSet ? [...planSet] : null;
+  const planningTabs = can(p, 'planning') && (scope === null ? can(p, 'billing') && !projectsFor(p, 'billing') : scope.every((id) => can(p, 'billing', id)));
+  const views = VIEWS.filter((v) => v.key !== 'list' || scope === null);
+  const asked = sp.view === 'billing' ? 'summary' : sp.view;
+  const view = !planningTabs ? 'tree' : (views.find((v) => v.key === asked)?.key ?? 'tree');
+  if (sp.projectId && scope && view !== 'tree' && !scope.includes(sp.projectId)) return <Note tone="warn">This project is not part of your access.</Note>;
   const href = (extra: Record<string, string | null>) => {
     const next = new URLSearchParams(sp as Record<string, string>);
     next.delete('page');
@@ -48,11 +56,11 @@ export default async function DfsPage({ searchParams }: { searchParams: Promise<
     }
     return `?${next.toString()}`;
   };
-  if (view === 'tree') return <StatusScreen sp={sp} user={user} mode="status" tabs={superAdmin ? <ViewTabs current="tree" href={href} /> : null} />;
+  if (view === 'tree') return <StatusScreen sp={sp} user={user} mode="status" tabs={planningTabs ? <ViewTabs current="tree" href={href} views={views} /> : null} />;
   const filters = parseDfsFilters(sp);
   const [kpis, ref] = await Promise.all([view === 'list' ? drawingKpis(filters) : Promise.resolve(null), drawingReference(filters.projectId)]);
 
-  const projectOpts = ref.projectOptions.map((p) => ({ value: p.value, label: p.label }));
+  const projectOpts = ref.projectOptions.filter((o) => !scope || scope.includes(o.value)).map((p) => ({ value: p.value, label: p.label }));
   const disciplineOpts = ref.disciplines.filter((d) => ['AR', 'ST', 'MEP', 'LS'].includes(d.code)).map((d) => ({ value: d.id, label: d.name }));
   const defs: FilterDef[] =
     view === 'summary'
@@ -84,7 +92,7 @@ export default async function DfsPage({ searchParams }: { searchParams: Promise<
           </Link>
         }
       />
-      <ViewTabs current={view} href={href} />
+      <ViewTabs current={view} href={href} views={views} />
 
       {view === 'list' ? (
         <>
@@ -104,18 +112,18 @@ export default async function DfsPage({ searchParams }: { searchParams: Promise<
       ) : (
         <>
           <FilterBar filters={defs} showSearch={false} searchPlaceholder={DFS_LABEL.searchPlaceholder} />
-          {view === 'summary' && <SummaryView sp={sp} />}
-          {view === 'periods' && <PeriodsView sp={sp} href={href} />}
+          {view === 'summary' && <SummaryView sp={sp} scope={scope} />}
+          {view === 'periods' && <PeriodsView sp={sp} href={href} scope={scope} />}
         </>
       )}
     </>
   );
 }
 
-function ViewTabs({ current, href }: { current: string; href: (e: Record<string, string | null>) => string }) {
+function ViewTabs({ current, href, views }: { current: string; href: (e: Record<string, string | null>) => string; views: readonly (typeof VIEWS)[number][] }) {
   return (
     <nav className="mb-3 flex flex-wrap gap-1 border-b border-line" aria-label="Project Drawing Status views">
-      {VIEWS.map((v) => (
+      {views.map((v) => (
         <Link
           key={v.key}
           href={href({ view: v.key })}
@@ -129,13 +137,13 @@ function ViewTabs({ current, href }: { current: string; href: (e: Record<string,
   );
 }
 
-async function SummaryView({ sp }: { sp: Record<string, string> }) {
+async function SummaryView({ sp, scope }: { sp: Record<string, string>; scope: string[] | null }) {
   const f = parseDfsFilters(sp);
-  return <DfsSummaryPanel summary={await dfsSummary({ projectId: f.projectId })} />;
+  return <DfsSummaryPanel summary={await dfsSummary({ projectId: f.projectId, scopeProjectIds: scope })} />;
 }
 
-async function PeriodsView({ sp, href }: { sp: Record<string, string>; href: (e: Record<string, string | null>) => string }) {
+async function PeriodsView({ sp, href, scope }: { sp: Record<string, string>; href: (e: Record<string, string | null>) => string; scope: string[] | null }) {
   const basis = sp.basis === 'FY' ? 'FY' : 'CY';
-  const data = await dfsPeriods(parseDfsFilters(sp), basis);
+  const data = await dfsPeriods({ ...parseDfsFilters(sp), scopeProjectIds: scope }, basis);
   return <DfsPeriodsView data={data} basisHref={(b) => href({ basis: b })} />;
 }

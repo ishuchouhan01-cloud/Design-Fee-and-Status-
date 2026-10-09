@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { fail, ok } from '@/lib/api';
+import { fail, ok, requireEntity } from '@/lib/api';
 import { createPackage } from '@/lib/services/status-edit';
 import { requireEdit } from '@/lib/status-api';
 import { optionalDateString } from '@/lib/validation';
@@ -21,7 +21,9 @@ const schema = z
 export async function POST(req: Request) {
   try {
     const ctx = await requireEdit(req, 'drawing.write');
-    return ok(await createPackage(schema.parse(await req.json()), ctx.actor), 201);
+    const b = schema.parse(await req.json());
+    await requireEntity(ctx, 'edit', 'PROJECT', b.projectId);
+    return ok(await createPackage(b, ctx.actor), 201);
   } catch (e) {
     return fail(e);
   }

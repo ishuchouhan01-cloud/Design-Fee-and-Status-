@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { fail, ok } from '@/lib/api';
+import { fail, ok, requireEntity } from '@/lib/api';
 import { createTower } from '@/lib/services/status-edit';
 import { requireEdit } from '@/lib/status-api';
 
@@ -11,7 +11,9 @@ const schema = z.object({ parentProjectId: z.string().min(1), name: z.string().t
 export async function POST(req: Request) {
   try {
     const ctx = await requireEdit(req, 'project.write');
-    return ok(await createTower(schema.parse(await req.json()), ctx.actor), 201);
+    const b = schema.parse(await req.json());
+    await requireEntity(ctx, 'edit', 'PROJECT', b.parentProjectId);
+    return ok(await createTower(b, ctx.actor), 201);
   } catch (e) {
     return fail(e);
   }

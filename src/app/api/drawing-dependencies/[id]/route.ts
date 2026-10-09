@@ -1,4 +1,4 @@
-import { fail, ok, requirePermission } from '@/lib/api';
+import { fail, ok, requireEntity, requirePermission } from '@/lib/api';
 import { deleteDrawingDependency, updateDrawingDependency } from '@/lib/services/drawing-control';
 import { drawingDependencyUpdateSchema } from '@/lib/validation';
 
@@ -21,6 +21,8 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   try {
     const ctx = await requirePermission(req, 'drawing.write');
     const { id } = await params;
+    await requireEntity(ctx, 'edit', 'DRAWING_DEPENDENCY', id);
+    await requireEntity(ctx, 'edit', 'DRAWING_DEPENDENCY', id);
     return ok(await deleteDrawingDependency(id, ctx.actor));
   } catch (e) {
     return fail(e);
