@@ -1,3 +1,6 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -18,5 +21,8 @@ const nextConfig = {
    * run at the same time without damaging each other.
    */
   distDir: process.env.NEXT_DIST_DIR || '.next',
+
+  /** This folder is the app root, whatever other lockfiles sit above it. */
+  outputFileTracingRoot: path.dirname(fileURLToPath(import.meta.url)),
 };
 export default nextConfig;

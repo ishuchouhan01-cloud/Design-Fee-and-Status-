@@ -53,8 +53,9 @@ export function readTextWorkbook(file: string): TextSheet[] {
   });
   const meta = wb.Workbook?.Sheets ?? [];
   return wb.SheetNames.map((name, i) => {
-    const ws = wb.Sheets[name] as unknown as RawCell[][];
-    const dense = Array.isArray(ws) ? ws : [];
+    // Dense mode: SheetJS 0.20 keeps the rows in `!data` (0.18 made the sheet itself the array).
+    const ws = wb.Sheets[name] as unknown as RawCell[][] | { '!data'?: RawCell[][] };
+    const dense = Array.isArray(ws) ? ws : (ws['!data'] ?? []);
     const cells: { r: number; c: number; cell: RawCell }[] = [];
     for (let r = 0; r < dense.length; r++) {
       const src = dense[r];

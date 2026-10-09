@@ -45,6 +45,9 @@ export function readWorkbook(file: string): WorkbookData {
       const x = cell as { t?: string; v?: unknown; f?: string; w?: string };
       delete x.f;
       delete x.w;
+      // The value is resolved; a number format left on the cell would make
+      // SheetJS 0.20 turn text formatted as a date ("m/d/yy") into a Date.
+      delete (x as { z?: unknown }).z;
       if (v === null) {
         x.t = 'z';
         delete x.v;
@@ -67,7 +70,9 @@ export function readWorkbook(file: string): WorkbookData {
       raw: true,
       defval: null,
       blankrows: true,
-    });
+      // SheetJS 0.20 shifts Date cells by the local time zone unless told the dates are UTC (they are: ./cells.ts).
+      UTC: true,
+    } as XLSX.Sheet2JSONOpts);
     return {
       name,
       hidden: Boolean(meta[i]?.Hidden),

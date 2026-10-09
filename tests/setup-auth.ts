@@ -6,8 +6,13 @@
  * apply. A request with a session cookie always goes through the real sign-in
  * path (tests/pds-*.test.ts).
  */
+import * as fs from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { vi } from 'vitest';
+import * as XLSX from 'xlsx';
+
+// SheetJS 0.20 as an ES module writes files (XLSX.writeFile, used by the fixtures) only once given fs.
+XLSX.set_fs(fs);
 
 process.env.SESSION_SECRET ??= randomBytes(32).toString('hex');
 
